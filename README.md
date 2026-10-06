@@ -148,13 +148,27 @@ Useful options for `analyze`:
 | `--bpm 120` | Tempo hint for recordings made without a click |
 | `--mode generic` | Any instrument: timing only, no drum labels |
 
-You can analyze any existing WAV file, such as a rehearsal recording:
-`analyze ~/Desktop/rehearsal.wav` copies it into `takes/rehearsal/` and analyzes
-it there. Without a
-click there's no metronome to compare against, so the tool measures you against
-your own steady pulse. Speeding up, slowing down and consistency are still
-accurate. Phone voice memos (`.m4a`) need `brew install ffmpeg` first, or
-export them as WAV.
+### Using a recording from your phone or another mic
+
+Laptop mics often struggle with how loud drums are. For cleaner audio, record
+on your phone (Voice Memos works) or a better mic, then analyze the file:
+
+```bash
+.venv/bin/python -m groove analyze ~/Downloads/"New Recording 3.m4a" --bpm 90
+```
+
+It's converted into a new take folder (here `takes/New-Recording-3/`) and
+analyzed. WAV, M4A, MP3, AIFF and FLAC all work. Tips:
+
+- **Tempo:** pass `--bpm` with the tempo you played at, if you know it.
+- **Metronome:** play along to one in headphones, so the click isn't picked up as hits.
+- **Placement:** put the phone a few feet from the kit, not right next to the snare.
+- **Count-in:** start recording a few seconds before you play, and say nothing over it.
+
+Without the tool's own click track there's no metronome to compare against,
+so you're measured against your own steady pulse. Speeding up, slowing down
+and consistency are still accurate; only "ahead of / behind the click" is
+missing.
 
 ## Cost
 

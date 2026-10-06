@@ -162,11 +162,12 @@ def run_analyze(args) -> int:
 def _take_folder(take: str) -> Path:
     """Resolve a take name, take folder, or audio file to its folder in takes/.
 
-    An audio file from elsewhere is copied into a new take folder (with its
-    click-info file, if any) so everything about a take lives in one place."""
+    An audio file from elsewhere (wav, m4a, mp3, aiff, flac...) is converted
+    into a new take folder, with its click-info file if any, so everything
+    about a take lives in one place."""
     import shutil
 
-    p = Path(take)
+    p = Path(take).expanduser()
     if p.is_dir():
         return p
     if (TAKES / take).is_dir():
@@ -174,15 +175,36 @@ def _take_folder(take: str) -> Path:
     if p.is_file():
         if p.name == RECORDING:
             return p.parent
-        folder = TAKES / p.stem
+        folder = TAKES / p.stem.replace(" ", "-")
         folder.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(p, folder / RECORDING)
+        _import_audio(p, folder / RECORDING)
         if Path(str(p) + ".json").exists():
             shutil.copy2(str(p) + ".json", folder / (RECORDING + ".json"))
-        print(f"Copied {p.name} into {folder}")
+        print(f"Imported {p.name} into {folder}")
         return folder
     names = sorted(d.name for d in TAKES.glob("*/") if d.is_dir()) if TAKES.exists() else []
     sys.exit(f"No take called '{take}'." + (f" Takes: {', '.join(names)}" if names else ""))
+
+
+def _import_audio(src: Path, dst: Path) -> None:
+    """Convert any audio file to a WAV at `dst`, keeping full quality."""
+    import subprocess
+
+    import soundfile as sf
+
+    try:
+        y, sr = sf.read(src, always_2d=True)  # wav, aiff, flac, ogg, mp3
+        sf.write(dst, y, sr)
+        return
+    except (RuntimeError, sf.LibsndfileError):
+        pass
+    if sys.platform == "darwin":  # m4a / aac (e.g. Voice Memos): macOS's built-in converter
+        r = subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16", str(src), str(dst)], capture_output=True)
+        if r.returncode == 0:
+            return
+    if not any(dst.parent.iterdir()):
+        dst.parent.rmdir()  # don't leave an empty take folder behind
+    sys.exit(f"Couldn't read {src.name}. Try exporting it as WAV, or install ffmpeg (brew install ffmpeg).")
 
 
 def _report(folder: Path, no_open: bool) -> None:
