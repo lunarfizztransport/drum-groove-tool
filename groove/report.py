@@ -113,7 +113,7 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
         body.append("<section class='card'><h2>Coaching</h2><p class='muted'>No Claude feedback for this take. Run "
                     "<code>analyze</code> without <code>--no-coach</code> (and with an API key) to get feedback, exercises, and fills.</p></section>")
 
-    body.append("<footer>Made with grum-groove-tool. Raw numbers are in analysis.json.</footer>")
+    body.append("<footer>Made with drum-groove-tool. Raw numbers are in analysis.json.</footer>")
     return _HTML.replace("{title}", escape(f"{take} groove report")).replace("{body}", "\n".join(body))
 
 

@@ -1,4 +1,4 @@
-# grum-groove-tool
+# drum-groove-tool
 
 **Record yourself playing drums, find out exactly how your timing sits, and get
 feedback plus new grooves and fills written in your style.**
@@ -36,8 +36,8 @@ rhythmic instrument (guitar strumming, shaker, hand percussion).
 Open a terminal (in VS Code: **Terminal → New Terminal**) and run:
 
 ```bash
-git clone https://github.com/lunarfizztransport/grum-groove-tool.git
-cd grum-groove-tool
+git clone https://github.com/lunarfizztransport/drum-groove-tool.git
+cd drum-groove-tool
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
