@@ -113,7 +113,7 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
         body.append("<section class='card'><h2>Coaching</h2><p class='muted'>No Claude feedback for this take. Run "
                     "<code>analyze</code> without <code>--no-coach</code> (and with an API key) to get feedback, exercises, and fills.</p></section>")
 
-    body.append("<footer>Made with drum-groove-tool. Raw numbers are in analysis.json.</footer>")
+    body.append("<footer>Made with drum-groove-tool. Timing is measured on your computer; coaching and ideas come from Claude (AI) and are suggestions to learn from, not parts to copy. Raw numbers are in analysis.json.</footer>")
     return _HTML.replace("{title}", escape(f"{take} groove report")).replace("{body}", "\n".join(body))
 
 
@@ -134,18 +134,32 @@ def _coaching(c: dict, folder: Path, spb: int) -> str:
         for e in c["exercises"]:
             parts.append(f"<section class='card'><h3>{escape(e['name'])} <span class='pill'>start at {e['start_bpm']} bpm</span></h3>"
                          f"<p>{_p(e['instructions'])}</p><p class='muted'><strong>Goal:</strong> {_p(e['goal'])}</p></section>")
-    for kind, title, key in (("variation", "Groove variations", "variations"), ("fill", "Fills", "fills")):
+    if c.get("variations") or c.get("fills"):
+        parts.append("<h2 class='section'>Ideas to explore</h2>"
+                     "<section class='card note'><p><strong>Starting points, not scripts.</strong> These ideas are built "
+                     "from how you played. Use them like a teacher's examples: learn one, then change it until it sounds "
+                     "like you. The fills you make up yourself, in the moment, are the real goal.</p></section>")
+    for kind, title, key in (("variation", "Variation ideas", "variations"), ("fill", "Fill ideas", "fills")):
         if not c.get(key):
             continue
-        parts.append(f"<h2 class='section'>{title}</h2>")
+        parts.append(f"<h3 class='subsection'>{title}</h3>")
         for i, p in enumerate(c[key], 1):
             bars = _pattern_bars(p, spb)
             links = (_midi_link(folder, f"patterns/{kind}{i}_in_context.mid", "Hear it with your groove")
                      + _midi_link(folder, f"patterns/{kind}{i}.mid", "Hear it alone"))
+            mine = ""
+            if p.get("make_it_yours"):
+                mine = ("<div class='mine'><strong>Make it yours</strong><ul>"
+                        + "".join(f"<li>{_p(m)}</li>" for m in p["make_it_yours"]) + "</ul></div>")
             parts.append(f"<section class='card'><h3>{escape(p['name'])} <span class='pill'>{escape(p['difficulty'])}</span></h3>"
                          f"<p>{_p(p['why_it_fits'])}</p>{_grid(bars, spb)}"
                          f"<p class='muted'><strong>How to practice:</strong> {_p(p['how_to_practice'])}</p>"
-                         f"<div class='links'>{links}</div></section>")
+                         f"{mine}<div class='links'>{links}</div></section>")
+    if c.get("your_turn"):
+        parts.append("<h2 class='section'>Your turn</h2>"
+                     "<section class='card lead'><p class='muted'>No answers here. Set the click, pick one, and "
+                     "improvise. Then record it and see how it felt.</p><ul>"
+                     + "".join(f"<li>{_p(t)}</li>" for t in c["your_turn"]) + "</ul></section>")
     return "\n".join(parts)
 
 
@@ -402,6 +416,11 @@ path.early { fill: var(--early); } path.late { fill: var(--late); }
 .hit-target { fill: transparent; cursor: default; }
 .hit-target:hover { fill: var(--ink); fill-opacity: .04; }
 #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page); font-size: 13px; padding: 6px 10px; border-radius: 6px; max-width: 280px; z-index: 10; }
+h3.subsection { font-size: 17px; margin: 22px 0 10px; color: var(--ink2); }
+.card.note { border-left: 3px solid var(--line); }
+.card.note p { margin: 0; }
+.mine { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 10px 0 4px; font-size: 14px; }
+.mine ul { margin-top: 4px; }
 footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 </style></head>
 <body><main>

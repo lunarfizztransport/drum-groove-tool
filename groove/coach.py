@@ -29,6 +29,7 @@ class Pattern(BaseModel):
     difficulty: Literal["easier", "same level", "stretch"]
     why_it_fits: str = Field(description="How this builds on what the player actually did.")
     how_to_practice: str
+    make_it_yours: list[str] = Field(description="2-3 specific ways the player could change this idea so it becomes their own.")
     tracks: list[Track]
 
 
@@ -53,8 +54,9 @@ class Coaching(BaseModel):
     swing_and_feel: str
     dynamics: str
     exercises: list[Exercise]
-    variations: list[Pattern] = Field(description="Variations on the main groove, each 1-2 bars.")
-    fills: list[Pattern] = Field(description="Fills, each 1-2 bars, played straight after the main groove.")
+    variations: list[Pattern] = Field(description="Variation ideas on the main groove, each 1-2 bars.")
+    fills: list[Pattern] = Field(description="Fill ideas, each 1-2 bars, played straight after the main groove.")
+    your_turn: list[str] = Field(description="Open-ended improvisation challenges with no answer given.")
 
 
 SYSTEM = """You are a drum teacher and working band drummer. Your student is learning drums so they can join a band. You'll get a machine analysis of a recording of them playing and should give them feedback and new material.
@@ -69,7 +71,9 @@ How to read the analysis:
 What to give back:
 - Feedback that is specific, cites the numbers, and is honest about both strengths and problems. Explain what each issue will sound like to bandmates.
 - Exercises that target the biggest timing issues.
-- Variations and fills in this player's style: start from their actual main groove, the instruments and density they use, and their tendencies, and pitch most at or slightly above their current level. Variations should be usable in a song verse or chorus; fills should lead naturally back into their groove.
+- Variation and fill ideas in this player's style: start from their actual main groove, the instruments and density they use, and their tendencies, and pitch most at or slightly above their current level. Variations should be usable in a song verse or chorus; fills should lead naturally back into their groove.
+- These are starting points for the player to learn from and then change, not parts to copy note for note. Improvising their own ideas is the goal. For each idea, give a few concrete ways to make it their own (move it, thin it out, change the drums or the accents, start it somewhere else).
+- "Your turn": a few improvisation challenges that set a constraint and leave the playing to them, e.g. "a one-bar fill using only the floor tom and snare that starts on the 'e' of 4". Don't write out answers for these.
 
 Pattern format: each track's steps string has exactly 16 characters per bar of 4/4 (bars x 16 total, more for other meters as noted in the analysis), one per 16th note starting on beat 1. Use X accent, x normal, g ghost, - rest. Only include tracks that play."""
 
@@ -135,12 +139,18 @@ def to_markdown(c: Coaching, steps_per_bar: int = 16) -> str:
     out.append(f"## Swing & feel\n\n{c.swing_and_feel}\n\n## Dynamics\n\n{c.dynamics}\n\n## Exercises\n")
     for e in c.exercises:
         out.append(f"### {e.name} (start at {e.start_bpm} bpm)\n\n{e.instructions}\n\n*Goal:* {e.goal}\n")
-    for title, pats in (("Variations", c.variations), ("Fills", c.fills)):
-        out.append(f"## {title}\n")
+    out.append("## Ideas to explore\n\n*Starting points, not scripts: learn one, then change it until it sounds like you.*\n")
+    for title, pats in (("Variation ideas", c.variations), ("Fill ideas", c.fills)):
+        out.append(f"### {title}\n")
         for p in pats:
-            out.append(f"### {p.name} ({p.difficulty}, {p.bars} bar{'s' if p.bars > 1 else ''})\n\n{p.why_it_fits}\n")
+            out.append(f"#### {p.name} ({p.difficulty}, {p.bars} bar{'s' if p.bars > 1 else ''})\n\n{p.why_it_fits}\n")
             out.append("```\n" + render_grid(pattern_bars(p, steps_per_bar)) + "\n```\n")
             out.append(f"*Practice:* {p.how_to_practice}\n")
+            if p.make_it_yours:
+                out.append("*Make it yours:*\n" + "\n".join(f"- {m}" for m in p.make_it_yours) + "\n")
+    if c.your_turn:
+        out.append("## Your turn\n\nNo answers here. These are for you to improvise.\n")
+        out += [f"- {t}" for t in c.your_turn]
     return "\n".join(out)
 
 

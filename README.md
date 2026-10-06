@@ -11,10 +11,15 @@ You play along to a click. The tool works out every hit you made and measures:
 - how much you swing.
 
 Claude, Anthropic's AI model, then reads those numbers like a drum teacher
-would. It explains what it hears, gives you exercises, and writes new
-variations and fills based on what you actually played. Everything ends up in
-one page you open in your browser, and every suggestion comes as a MIDI file
-you can play in GarageBand.
+would. It explains what it hears, gives you exercises, and suggests variation
+and fill ideas based on what you actually played, as starting points for you
+to change and make your own. Everything ends up in one page you open in your
+browser, and every idea comes as a MIDI file you can play in GarageBand.
+
+> **Advice, not answers.** The tool's job is to help you hear your own playing
+> clearly and find your own voice. The ideas are like a teacher's examples:
+> learn one, then bend it, break it, and improvise past it. See
+> [About the AI suggestions](#about-the-ai-suggestions).
 
 ```
 record ─▶ find the hits ─▶ measure timing ─▶ Claude coaching ─▶ report + MIDI
@@ -83,7 +88,8 @@ after each take. Double-click it to open it again later. It shows:
 - **Charts:** tempo bar by bar, early/late bar by bar, and timing by drum and by count (hover for details)
 - **Moments to look at:** the hits furthest off
 - **Claude's coaching:** what's working, timing problems with fixes, practice exercises
-- **Variations and fills**, each drawn as a grid with ▶ links to hear them
+- **Ideas to explore:** variation and fill ideas, each drawn as a grid with ▶ links to hear them and ways to make it yours
+- **Your turn:** improvisation challenges with no answers given
 
 The **MIDI files** in `patterns/` open in GarageBand (double-click, then press
 Space). Start with the `_in_context` versions. They play your groove, then the
@@ -93,10 +99,32 @@ fill, then back to your groove, so you hear how it fits in a song.
 |---|---|
 | `report.html` | **Start here.** Everything, readable |
 | `recording.wav` | Your recording |
-| `patterns/*.mid` | Suggested variations and fills to listen to |
+| `patterns/*.mid` | Variation and fill ideas to listen to |
 | `transcription.mid` | Your take as the tool heard it |
 | `coaching.md` | Claude's feedback as plain text |
 | `analysis.json`, `hits.json`, `coaching.json` | Raw data for the program. You don't need to open these |
+
+## About the AI suggestions
+
+**What they're for.** Improvising is about your own ideas, reacting in the
+moment. Nobody starts from nothing, though: drummers have always learned
+vocabulary from teachers, records and each other, then made it their own. The
+suggestions here are that kind of vocabulary, built from *your* groove and
+tendencies. Every idea comes with ways to change it, and the **Your turn**
+challenges give you a constraint and leave the playing to you.
+
+**What's sent to the AI.** Only the timing numbers and your groove written as
+a grid (e.g. "19 ms ahead of the click, snare on 2 and 4"). Your recording
+never leaves your computer. The tool doesn't search for, sample, or copy
+anyone's music, and the AI doesn't generate audio. The sounds you hear are
+GarageBand's drum kit playing the grid.
+
+**How the AI learned.** Claude is a general AI model, not a music generator.
+Anthropic trains it on a mix of public web data, licensed data, and data
+from users who opted in. Its general knowledge of drumming comes partly from
+lessons and writing that people published online. If you'd rather not use AI
+at all, run with `--no-coach`: the timing analysis, charts and groove grid all
+work without it.
 
 ## Running steps yourself
 
