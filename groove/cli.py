@@ -1,10 +1,13 @@
 """groove: record yourself, transcribe the hits, analyze your timing, and get
 coaching + new variations/fills from Claude.
 
+Every take lives in its own folder under takes/ (recording + results).
+
   python -m groove calibrate
-  python -m groove record take1.wav --bpm 90 --bars 8
-  python -m groove analyze take1.wav --goal "joining an indie rock band"
-  python -m groove synth demo.wav            # fake take with known flaws
+  python -m groove record --bpm 90 --bars 8        # -> takes/<date_time>/
+  python -m groove analyze <take>                  # take name, folder, or any .wav
+  python -m groove report <take>                   # reopen a take's report
+  python -m groove synth                           # fake take -> takes/demo/
 """
 
 from __future__ import annotations
@@ -16,13 +19,16 @@ from pathlib import Path
 
 import anthropic
 
+TAKES = Path(__file__).resolve().parent.parent / "takes"
+RECORDING = "recording.wav"
+
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="groove", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("record", help="record a take (with click if --bpm is given)")
-    r.add_argument("out")
+    r.add_argument("name", nargs="?", help="take name (default: date and time)")
     r.add_argument("--bpm", type=float, help="play a click at this tempo (recommended)")
     r.add_argument("--bars", type=int, default=8)
     r.add_argument("--beats-per-bar", type=int, default=4)
@@ -31,22 +37,21 @@ def main(argv=None) -> int:
     sub.add_parser("calibrate", help="measure audio round-trip latency (speakers, not headphones)")
 
     a = sub.add_parser("analyze", help="transcribe + analyze a take, then ask Claude for coaching")
-    a.add_argument("audio")
+    a.add_argument("take", help="take name (e.g. 2026-10-06_1039), take folder, or any .wav file")
     a.add_argument("--bpm", type=float, help="tempo hint when there's no click sidecar file")
     a.add_argument("--beats-per-bar", type=int, default=4)
     a.add_argument("--mode", choices=["drums", "generic"], default="drums",
                    help="generic = any percussive instrument; timing only, no kit labels")
     a.add_argument("--goal", help="what you're working toward / style, passed to Claude")
     a.add_argument("--no-coach", action="store_true", help="skip the Claude step")
-    a.add_argument("--out", help="output folder (default: <audio>_groove/)")
     a.add_argument("--no-open", action="store_true", help="don't open the report in a browser")
 
     rp = sub.add_parser("report", help="rebuild report.html for an analyzed take and open it")
-    rp.add_argument("folder", help="e.g. take_groove")
+    rp.add_argument("take", help="take name or folder")
     rp.add_argument("--no-open", action="store_true")
 
     s = sub.add_parser("synth", help="generate a fake take with known timing flaws")
-    s.add_argument("out")
+    s.add_argument("name", nargs="?", default="demo")
     s.add_argument("--bpm", type=float, default=96)
     s.add_argument("--bars", type=int, default=8)
     s.add_argument("--rush", type=float, default=4.0, help="bpm gained over the take")
@@ -57,19 +62,26 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == "record":
+        from datetime import datetime
+
         from .audio import record
-        record(args.out, args.bpm, args.bars, args.beats_per_bar, args.count_in)
+        folder = TAKES / (args.name or datetime.now().strftime("%Y-%m-%d_%H%M"))
+        folder.mkdir(parents=True, exist_ok=True)
+        record(str(folder / RECORDING), args.bpm, args.bars, args.beats_per_bar, args.count_in)
+        print(f"Take saved in {folder}\nAnalyze it with: groove analyze {folder.name}")
     elif args.cmd == "calibrate":
         from .audio import calibrate
         calibrate()
     elif args.cmd == "synth":
         from .synth import synth
-        synth(args.out, args.bpm, args.bars, args.rush, args.snare_late, args.jitter, args.swing)
-        print(f"Wrote {args.out}")
+        folder = TAKES / args.name
+        folder.mkdir(parents=True, exist_ok=True)
+        synth(str(folder / RECORDING), args.bpm, args.bars, args.rush, args.snare_late, args.jitter, args.swing)
+        print(f"Wrote {folder / RECORDING}")
     elif args.cmd == "analyze":
         return run_analyze(args)
     elif args.cmd == "report":
-        _report(Path(args.folder), args.no_open)
+        _report(_take_folder(args.take), args.no_open)
     return 0
 
 
@@ -79,9 +91,8 @@ def run_analyze(args) -> int:
     from .midi import hits_to_midi, patterns_to_midi
     from .transcribe import transcribe
 
-    audio = Path(args.audio)
-    out = Path(args.out or f"{audio.with_suffix('')}_groove")
-    out.mkdir(parents=True, exist_ok=True)
+    out = _take_folder(args.take)
+    audio = out / RECORDING
 
     sidecar = Path(str(audio) + ".json")
     click, bpb = None, args.beats_per_bar
@@ -146,6 +157,32 @@ def run_analyze(args) -> int:
     print("\n" + md)
     _report(out, args.no_open)
     return 0
+
+
+def _take_folder(take: str) -> Path:
+    """Resolve a take name, take folder, or audio file to its folder in takes/.
+
+    An audio file from elsewhere is copied into a new take folder (with its
+    click-info file, if any) so everything about a take lives in one place."""
+    import shutil
+
+    p = Path(take)
+    if p.is_dir():
+        return p
+    if (TAKES / take).is_dir():
+        return TAKES / take
+    if p.is_file():
+        if p.name == RECORDING:
+            return p.parent
+        folder = TAKES / p.stem
+        folder.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, folder / RECORDING)
+        if Path(str(p) + ".json").exists():
+            shutil.copy2(str(p) + ".json", folder / (RECORDING + ".json"))
+        print(f"Copied {p.name} into {folder}")
+        return folder
+    names = sorted(d.name for d in TAKES.glob("*/") if d.is_dir()) if TAKES.exists() else []
+    sys.exit(f"No take called '{take}'." + (f" Takes: {', '.join(names)}" if names else ""))
 
 
 def _report(folder: Path, no_open: bool) -> None:

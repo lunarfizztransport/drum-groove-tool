@@ -19,10 +19,21 @@ def build_report(folder: str | Path) -> Path:
     a = json.loads((folder / "analysis.json").read_text())
     coaching_file = folder / "coaching.json"
     c = json.loads(coaching_file.read_text()) if coaching_file.exists() else None
-    take = folder.name.removesuffix("_groove")
+    take = _take_title(folder.name)
     out = folder / "report.html"
     out.write_text(_page(take, a, c, folder))
     return out
+
+
+def _take_title(name: str) -> str:
+    """'2026-10-06_1039' -> 'Oct 6, 2026 · 10:39 AM'; other names unchanged."""
+    from datetime import datetime
+
+    try:
+        d = datetime.strptime(name, "%Y-%m-%d_%H%M")
+    except ValueError:
+        return name
+    return f"{d:%b} {d.day}, {d.year} · {d.hour % 12 or 12}:{d:%M} {d:%p}"
 
 
 # --- page -------------------------------------------------------------------

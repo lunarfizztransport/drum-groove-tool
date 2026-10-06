@@ -59,9 +59,24 @@ Press **Ctrl+C** at any time to stop.
 
 ## Your results
 
-Each take gets its own folder (e.g. `take_groove/`). The main file is
-**`report.html`**, which opens in your browser automatically. Double-click it
-to open it again later. It shows:
+Every take is saved in its own folder inside **`takes/`**, named by the date
+and time you recorded it. The recording and all of its results stay together:
+
+```
+takes/
+  2026-10-06_1010/
+    recording.wav
+    report.html        ← start here
+    patterns/          ← fills and variations as MIDI
+    ...
+  2026-10-06_1039/
+  demo/
+```
+
+Takes stay on your computer: the `takes/` folder is never uploaded to GitHub.
+
+The main file is **`report.html`**, which opens in your browser automatically
+after each take. Double-click it to open it again later. It shows:
 
 - **Headline numbers:** timing spread, % of hits on target, tempo start → end, distance from the click, swing feel
 - **Your groove** drawn as a drum grid
@@ -77,6 +92,7 @@ fill, then back to your groove, so you hear how it fits in a song.
 | File | What it is |
 |---|---|
 | `report.html` | **Start here.** Everything, readable |
+| `recording.wav` | Your recording |
 | `patterns/*.mid` | Suggested variations and fills to listen to |
 | `transcription.mid` | Your take as the tool heard it |
 | `coaching.md` | Claude's feedback as plain text |
@@ -86,10 +102,14 @@ fill, then back to your groove, so you hear how it fits in a song.
 
 ```bash
 .venv/bin/python -m groove calibrate                          # once per computer/mic setup
-.venv/bin/python -m groove record take1.wav --bpm 80 --bars 8
-.venv/bin/python -m groove analyze take1.wav --goal "learning drums to join an indie rock band"
-.venv/bin/python -m groove report take1_groove                # reopen / rebuild a report
+.venv/bin/python -m groove record --bpm 80 --bars 8           # saves to takes/<date_time>/
+.venv/bin/python -m groove analyze 2026-10-06_1039 --goal "learning drums to join an indie rock band"
+.venv/bin/python -m groove report 2026-10-06_1039              # reopen / rebuild a report
 ```
+
+Refer to a take by its folder name. You can also give `record` your own
+name, e.g. `record verse-groove --bpm 100`, which saves to `takes/verse-groove/`.
+Any tempo works; change `--bpm`, and `--bars` for longer or shorter takes.
 
 Useful options for `analyze`:
 
@@ -100,7 +120,9 @@ Useful options for `analyze`:
 | `--bpm 120` | Tempo hint for recordings made without a click |
 | `--mode generic` | Any instrument: timing only, no drum labels |
 
-You can analyze any existing WAV file, such as a rehearsal recording. Without a
+You can analyze any existing WAV file, such as a rehearsal recording:
+`analyze ~/Desktop/rehearsal.wav` copies it into `takes/rehearsal/` and analyzes
+it there. Without a
 click there's no metronome to compare against, so the tool measures you against
 your own steady pulse. Speeding up, slowing down and consistency are still
 accurate. Phone voice memos (`.m4a`) need `brew install ffmpeg` first, or
@@ -131,11 +153,11 @@ the key prompt) to skip coaching entirely.
 ## Testing without a drum kit
 
 ```bash
-.venv/bin/python -m groove synth demo.wav --rush 4 --snare-late 15 --swing 0.6
-.venv/bin/python -m groove analyze demo.wav --no-coach
+.venv/bin/python -m groove synth demo --rush 4 --snare-late 15 --swing 0.6
+.venv/bin/python -m groove analyze demo --no-coach
 ```
 
-`synth` creates a fake take with timing flaws you choose, so you can check
+`synth` creates a fake take (in `takes/demo/`) with timing flaws you choose, so you can check
 that the analysis finds them.
 
 ## How it works
@@ -159,4 +181,5 @@ groove/
   synth.py        fake takes for testing
   cli.py          the `groove` command
 run.sh            guided walkthrough
+takes/            your recordings and results (not uploaded)
 ```
