@@ -42,11 +42,17 @@ def _take_title(name: str) -> str:
 def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
     t, tempo, sw = a["tightness"], a["tempo"], a["swing"]
     click = a["reference"] == "click"
-    spb = 4 * a["beats_per_bar"]
+    from .meter import FOUR_FOUR
+
+    labels = a.get("count_labels") or FOUR_FOUR.count_labels()  # older takes are 4/4
+    slots = a.get("slots_per_beat", 4)
+    grid = lambda bars: _grid(bars, labels, slots)  # noqa: E731
+    ts = a.get("time_signature", "4/4")
+    beat_note = a.get("beat_note", "quarter note")
 
     tiles = [
-        _tile("Timing spread", f"{t['std_ms']:.0f} ms", _spread_word(t["std_ms"]),
-              "How far your hits scatter around your own groove. Under 10 ms is tight; 10–20 is typical for an intermediate player."),
+        _tile("Timing spread", f"{t['std_ms']:.0f} ms", f"{_spread_word(t['std_ms'])} (rule of thumb)",
+              "How far your hits scatter around your own groove. A pro benchmark is about 9 ms; see 'What the research says'."),
         _tile("Hits on target", f"{t['pct_within_10ms']:.0f}%", f"within 10 ms · {t['pct_within_20ms']:.0f}% within 20 ms",
               "Share of hits that landed within 10 ms of where they belong."),
     ]
@@ -58,26 +64,36 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
         off = tempo["mean_offset_vs_click_ms"]
         tiles.append(_tile("Vs the click", f"{abs(off):.0f} ms {'ahead' if off < 0 else 'behind'}",
                            "on average", "Average distance from the metronome. Ahead = rushing, behind = dragging."))
-    tiles.append(_tile("Feel", sw["feel"].split(",")[0].replace("8ths ", "").capitalize(),
-                       f"8th notes {sw['eighth_swing_pct']:.0f}% · 50% = straight, 67% = swing",
-                       "Where your off-beat 8th notes land between the beats."))
+    if sw.get("eighth_swing_pct") is not None:
+        tiles.append(_tile("Feel", sw["feel"].split(",")[0].replace("8ths ", "").capitalize(),
+                           f"8th notes {sw['eighth_swing_pct']:.0f}% · 50% = straight, 67% = swing",
+                           "Where your off-beat 8th notes land between the beats."))
+    else:
+        tiles.append(_tile("Time signature", ts, sw["feel"].split(": ", 1)[-1],
+                           "Swing % isn't measured in this time signature."))
 
     groove = a["patterns"]["main_groove"]
     n_same = a["patterns"]["main_groove_bars"]
     body = [
         f"<header><p class='eyebrow'>Groove report</p><h1>{escape(take)}</h1>"
-        f"<p class='sub'>{a['n_bars']} bars · {a['grid_bpm']:.0f} bpm · "
+        f"<p class='sub'>{ts} · {a['n_bars']} bars · {a['grid_bpm']:.0f} bpm"
+        f"{'' if beat_note == 'quarter note' else f' ({beat_note}s)'} · "
         f"{'played to a click' if click else 'no click (measured against your own steady pulse)'}</p></header>",
         f"<section class='tiles'>{''.join(tiles)}</section>",
     ]
 
+    stale = c and c.get("for_time_signature", "4/4") != ts
+    if stale:
+        body.append(f"<section class='card warn'><p><strong>Heads up:</strong> the coaching on this page was written "
+                    f"when this take was analyzed as {escape(c.get('for_time_signature', '4/4'))}, but it's now "
+                    f"analyzed as {escape(ts)}. Run <code>analyze</code> again with coaching to update it.</p></section>")
     if c:
         body.append(f"<section class='card lead'><h2>The short version</h2><p>{_p(c['summary'])}</p></section>")
 
     body.append("<section class='card'><h2>Your groove</h2>"
                 f"<p class='muted'>The beat you played most often ({n_same} of {a['n_bars']} bars). "
                 "Darker = harder hit, lighter = ghost note.</p>"
-                f"{_grid([groove], spb)}{_midi_link(folder, 'transcription.mid', 'Hear your whole take')}</section>")
+                f"{grid([groove])}{_midi_link(folder, 'transcription.mid', 'Hear your whole take')}</section>")
 
     charts = ["<section class='card'><h2>Tempo, bar by bar</h2>"]
     if tempo["bpm_by_bar"]:
@@ -89,7 +105,7 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
 
     inst_rows = [(INST_LABEL.get(k, k.capitalize()), v["mean_offset_ms_vs_groove"], v["std_ms"], v["count"])
                  for k, v in sorted(a["per_instrument"].items(), key=lambda kv: _inst_rank(kv[0]))]
-    pos_rows = [(("Beats 1 2 3 4" if k == "downbeats" else f"“{k}” notes"), v["mean_offset_ms"], v["std_ms"], v["count"])
+    pos_rows = [(_position_label(k), v["mean_offset_ms"], v["std_ms"], v["count"])
                 for k, v in a["per_beat_position"].items()]
     body.append("<div class='two'>"
                 "<section class='card'><h2>By drum</h2><p class='muted'>Dot = average placement inside your groove; "
@@ -107,17 +123,21 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
                     f"<div class='scroll'><table><thead><tr><th>Bar</th><th>Count</th><th>Drum</th><th class='num'>Off by</th></tr></thead>"
                     f"<tbody>{rows}</tbody></table></div></section>")
 
+    refs: list[str] = []
+    body.append(_research(a, refs))
+
     if c:
-        body.append(_coaching(c, folder, spb))
+        body.append(_coaching(c, folder, grid, len(labels)))
     else:
         body.append("<section class='card'><h2>Coaching</h2><p class='muted'>No Claude feedback for this take. Run "
                     "<code>analyze</code> without <code>--no-coach</code> (and with an API key) to get feedback, exercises, and fills.</p></section>")
 
+    body.append(_references(refs))
     body.append("<footer>Made with drum-groove-tool. Timing is measured on your computer; coaching and ideas come from Claude (AI) and are suggestions to learn from, not parts to copy. Raw numbers are in analysis.json.</footer>")
     return _HTML.replace("{title}", escape(f"{take} groove report")).replace("{body}", "\n".join(body))
 
 
-def _coaching(c: dict, folder: Path, spb: int) -> str:
+def _coaching(c: dict, folder: Path, grid, spb: int) -> str:
     parts = ["<h2 class='section'>Coaching</h2>"]
     if c.get("strengths"):
         parts.append("<section class='card'><h3>What's working</h3><ul>"
@@ -152,7 +172,7 @@ def _coaching(c: dict, folder: Path, spb: int) -> str:
                 mine = ("<div class='mine'><strong>Make it yours</strong><ul>"
                         + "".join(f"<li>{_p(m)}</li>" for m in p["make_it_yours"]) + "</ul></div>")
             parts.append(f"<section class='card'><h3>{escape(p['name'])} <span class='pill'>{escape(p['difficulty'])}</span></h3>"
-                         f"<p>{_p(p['why_it_fits'])}</p>{_grid(bars, spb)}"
+                         f"<p>{_p(p['why_it_fits'])}</p>{grid(bars)}"
                          f"<p class='muted'><strong>How to practice:</strong> {_p(p['how_to_practice'])}</p>"
                          f"{mine}<div class='links'>{links}</div></section>")
     if c.get("your_turn"):
@@ -163,12 +183,52 @@ def _coaching(c: dict, folder: Path, spb: int) -> str:
     return "\n".join(parts)
 
 
+def _research(a: dict, refs: list[str]) -> str:
+    """'What the research says' cards; fills `refs` with source ids in citation order."""
+    from .research import notes
+
+    cards = []
+    for title, text, ids in notes(a):
+        marks = []
+        for sid in ids:
+            if sid not in refs:
+                refs.append(sid)
+            n = refs.index(sid) + 1
+            marks.append(f"<a class='ref' href='#ref-{sid}'>[{n}]</a>")
+        cards.append(f"<div class='rnote'><h3>{escape(title)}</h3><p>{escape(text)} {''.join(marks)}</p></div>")
+    return ("<h2 class='section'>What the research says</h2>"
+            "<p class='muted'>Published studies on timing and groove that put your numbers in context. "
+            "Every source is listed at the bottom of this page.</p>"
+            f"<div class='rgrid'>{''.join(cards)}</div>")
+
+
+def _references(refs: list[str]) -> str:
+    from .research import SOURCES
+
+    items = "".join(
+        f"<li id='ref-{sid}'>{escape(SOURCES[sid]['cite'])} "
+        f"<a href='{escape(SOURCES[sid]['url'])}'>{escape(SOURCES[sid]['url'])}</a>"
+        f"<br><span class='muted'>{escape(SOURCES[sid]['finding'])}</span></li>"
+        for sid in refs)
+    return ("<section class='card refs'><h2>Research sources</h2><p class='muted'>Each source was checked by "
+            "hand against the published paper. The coaching and ideas above come from AI and don't cite "
+            f"studies themselves.</p><ol>{items}</ol></section>")
+
+
 # --- pieces -------------------------------------------------------------------
 
 
 def _tile(label, value, detail, tip) -> str:
     return (f"<div class='tile' title='{escape(tip)}'><div class='tlabel'>{escape(label)}</div>"
             f"<div class='tvalue'>{escape(value)}</div><div class='tdetail'>{escape(detail)}</div></div>")
+
+
+def _position_label(k: str) -> str:
+    if k == "downbeats":
+        return "On the beat"
+    if k in ("e", "&", "a"):
+        return "\u201c" + k + "\u201d notes"
+    return k[0].upper() + k[1:]
 
 
 def _spread_word(ms: float) -> str:
@@ -199,12 +259,12 @@ def _pattern_bars(p: dict, spb: int) -> list[dict[str, str]]:
     return out
 
 
-def _grid(bars: list[dict[str, str]], spb: int) -> str:
+def _grid(bars: list[dict[str, str]], counts: list[str], slots: int) -> str:
     """Drum grid as an HTML table: one row per drum, one cell per 16th."""
+    spb = len(counts)
     insts = sorted({i for bar in bars for i in bar}, key=_inst_rank)
-    counts = [str(i // 4 + 1) if i % 4 == 0 else ["", "e", "&", "a"][i % 4] for i in range(spb)]
     head = "<th></th>" + "".join(
-        "".join(f"<th class='{'beat' if i % 4 == 0 else ''}{' barstart' if i == 0 and b else ''}'>{c}</th>"
+        "".join(f"<th class='{'beat' if i % slots == 0 else ''}{' barstart' if i == 0 and b else ''}'>{c}</th>"
                 for i, c in enumerate(counts)) for b in range(len(bars)))
     rows = []
     for inst in insts:
@@ -213,7 +273,7 @@ def _grid(bars: list[dict[str, str]], spb: int) -> str:
             steps = bar.get(inst, "-" * spb)
             for i, ch in enumerate(steps):
                 cls = {"X": "hit accent", "x": "hit", "g": "hit ghost"}.get(ch, "")
-                if i % 4 == 0:
+                if i % slots == 0:
                     cls += " beat"
                 if i == 0 and b:
                     cls += " barstart"
@@ -417,10 +477,18 @@ path.early { fill: var(--early); } path.late { fill: var(--late); }
 .hit-target:hover { fill: var(--ink); fill-opacity: .04; }
 #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page); font-size: 13px; padding: 6px 10px; border-radius: 6px; max-width: 280px; z-index: 10; }
 h3.subsection { font-size: 17px; margin: 22px 0 10px; color: var(--ink2); }
+.card.warn { border-left: 3px solid var(--late); }
+.card.warn p { margin: 0; }
 .card.note { border-left: 3px solid var(--line); }
 .card.note p { margin: 0; }
 .mine { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 10px 0 4px; font-size: 14px; }
 .mine ul { margin-top: 4px; }
+.rgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px; margin-bottom: 14px; }
+.rnote { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.rnote h3 { font-size: 15px; } .rnote p { margin: 0; font-size: 14px; color: var(--ink2); }
+a.ref { color: var(--line); text-decoration: none; font-size: 12px; font-weight: 600; margin-left: 2px; }
+.refs ol { padding-left: 22px; margin: 0; } .refs li { margin-bottom: 10px; font-size: 14px; overflow-wrap: anywhere; }
+.refs a { color: var(--line); }
 footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 </style></head>
 <body><main>

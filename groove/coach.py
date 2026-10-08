@@ -66,7 +66,9 @@ How to read the analysis:
 - reference "self" means no click was used: the grid is the steady pulse that best fits their playing, so drift and consistency are meaningful but absolute accuracy is not. reference "click" means offsets are against a real metronome.
 - Swing is given as MPC-style percentages: 50% straight, ~66.7% triplet swing.
 - The transcription is a heuristic onset detector on one microphone. Kit-piece labels can be wrong (e.g. a snare hit also tagged as hi-hat), and occasional hits are missed or doubled. Build feedback on patterns across many hits, not on one odd event, and say so when a number may be an artifact.
-- For scale: differences under ~5 ms aren't audible; a spread (std) of 10-20 ms is typical for an intermediate player; under 10 ms is tight.
+- For scale, from published research: the smallest noticeable timing change is about 6 ms for notes under 240 ms apart and about 2.5% of the gap between notes for slower notes (Friberg & Sundberg 1995). A professional benchmark: Jeff Porcaro's hi-hat varied by about 9 ms between hits (Räsänen et al. 2015). Playing tens of ms ahead of a click is normal and shrinks with training (Repp 2005, 2010). Laid-back and pushed feels are deliberate styles, not only errors (Danielsen et al. 2015). Research is split on whether tighter timing grooves more (Frühauf et al. 2013 vs Kilchenmann & Senn 2015), so don't treat perfect quantization as the goal.
+- The 10-20 ms "typical intermediate" spread band is a rule of thumb, not research; present it as such if you use it.
+- Don't cite studies or sources in your answer. The report lists verified research separately, and any citation you add can't be checked.
 
 What to give back:
 - Feedback that is specific, cites the numbers, and is honest about both strengths and problems. Explain what each issue will sound like to bandmates.
@@ -75,7 +77,7 @@ What to give back:
 - These are starting points for the player to learn from and then change, not parts to copy note for note. Improvising their own ideas is the goal. For each idea, give a few concrete ways to make it their own (move it, thin it out, change the drums or the accents, start it somewhere else).
 - "Your turn": a few improvisation challenges that set a constraint and leave the playing to them, e.g. "a one-bar fill using only the floor tom and snare that starts on the 'e' of 4". Don't write out answers for these.
 
-Pattern format: each track's steps string has exactly 16 characters per bar of 4/4 (bars x 16 total, more for other meters as noted in the analysis), one per 16th note starting on beat 1. Use X accent, x normal, g ghost, - rest. Only include tracks that play."""
+Pattern format: each track's steps string has one character per 16th note, starting on beat 1, with exactly the number of steps per bar given in the analysis (16 in 4/4, 12 in 3/4 and 6/8), times the number of bars. The analysis's count_labels show how each step is counted. Use X accent, x normal, g ghost, - rest. Only include tracks that play. Write patterns that fit the time signature and its feel (e.g. 6/8 is two dotted-quarter beats of three 8ths each)."""
 
 
 def coach(analysis: dict, goal: str | None = None) -> Coaching:
@@ -84,6 +86,10 @@ def coach(analysis: dict, goal: str | None = None) -> Coaching:
     user = ""
     if goal:
         user += f"About me / what I'm working toward: {goal}\n\n"
+    ts = analysis.get("time_signature", "4/4")
+    spb = len(analysis.get("count_labels") or []) or 16
+    user += (f"Time signature: {ts}, {spb} steps per bar, tempo counted in "
+             f"{analysis.get('beat_note', 'quarter note')}s.\n\n")
     user += "Here is the analysis of my recording:\n\n" + json.dumps(_trim(analysis), indent=1)
 
     response = client.messages.parse(
@@ -130,7 +136,7 @@ def pattern_bars(p: Pattern, steps_per_bar: int = 16) -> list[dict[str, str]]:
     ]
 
 
-def to_markdown(c: Coaching, steps_per_bar: int = 16) -> str:
+def to_markdown(c: Coaching, steps_per_bar: int = 16, labels: list[str] | None = None) -> str:
     out = [f"# Groove feedback\n\n{c.summary}\n", "## What's working\n"]
     out += [f"- {s}" for s in c.strengths]
     out.append("\n## Timing\n")
@@ -144,7 +150,7 @@ def to_markdown(c: Coaching, steps_per_bar: int = 16) -> str:
         out.append(f"### {title}\n")
         for p in pats:
             out.append(f"#### {p.name} ({p.difficulty}, {p.bars} bar{'s' if p.bars > 1 else ''})\n\n{p.why_it_fits}\n")
-            out.append("```\n" + render_grid(pattern_bars(p, steps_per_bar)) + "\n```\n")
+            out.append("```\n" + render_grid(pattern_bars(p, steps_per_bar), labels) + "\n```\n")
             out.append(f"*Practice:* {p.how_to_practice}\n")
             if p.make_it_yours:
                 out.append("*Make it yours:*\n" + "\n".join(f"- {m}" for m in p.make_it_yours) + "\n")
@@ -154,10 +160,12 @@ def to_markdown(c: Coaching, steps_per_bar: int = 16) -> str:
     return "\n".join(out)
 
 
-def render_grid(bars: list[dict[str, str]]) -> str:
+def render_grid(bars: list[dict[str, str]], labels: list[str] | None = None) -> str:
     """ASCII drum grid with a count line, bars separated by |."""
     steps = len(next(iter(bars[0].values()))) if bars and bars[0] else 16
-    count = "".join(f"{b + 1}e&a" for b in range(steps // 4))
+    if not labels or len(labels) != steps:
+        labels = [f"{i // 4 + 1}" if i % 4 == 0 else "-e&a"[i % 4] for i in range(steps)]
+    count = "".join(l[-1] for l in labels)  # one character per step
     insts = list(dict.fromkeys(i for bar in bars for i in bar))
     width = max(len(i) for i in insts + ["count"])
     lines = [f"{'count':>{width}} |" + "|".join(count for _ in bars) + "|"]

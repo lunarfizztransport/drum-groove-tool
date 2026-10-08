@@ -19,10 +19,15 @@ fi
 
 name="$(date +%Y-%m-%d_%H%M)"
 echo "\n=== Record ($name) ==="
-read "bpm?Tempo to play at (press Enter for 80): "; bpm=${bpm:-80}
-echo "Put your headphones ON. You'll hear 4 count-in clicks, then play 8 bars."
+read "ts?Time signature, e.g. 4/4, 3/4, 6/8 (press Enter for 4/4): "; ts=${ts:-4/4}
+if [[ "$ts" == */8 ]]; then
+  read "bpm?Tempo in dotted quarters, two per bar in 6/8 (press Enter for 60): "; bpm=${bpm:-60}
+else
+  read "bpm?Tempo to play at (press Enter for 80): "; bpm=${bpm:-80}
+fi
+echo "Put your headphones ON. You'll hear a 1-bar count-in, then play 8 bars."
 read "?Press Enter to start recording... "
-G record $name --bpm $bpm --bars 8
+G record $name --time $ts --bpm $bpm --bars 8
 
 echo "\n=== Analyze ==="
 if [[ -z "$ANTHROPIC_API_KEY" ]]; then

@@ -17,19 +17,19 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
+from .meter import FOUR_FOUR, Meter
 from .transcribe import Transcription
-
-SLOTS_PER_BEAT = 4
-SLOT_NAMES = ["", "e", "&", "a"]
 
 
 def analyze(
     tr: Transcription,
     bpm: float | None = None,
-    beats_per_bar: int = 4,
+    meter: Meter = FOUR_FOUR,
     click: dict | None = None,
 ) -> dict:
-    """click: {"bpm": float, "origin": seconds of first downbeat after count-in}."""
+    """bpm counts the meter's beat (dotted quarters in 6/8).
+    click: {"bpm": float, "origin": seconds of first downbeat after count-in}."""
+    beats_per_bar, slots = meter.beats, meter.slots
     if len(tr.hits) < 8:
         raise ValueError(f"Only {len(tr.hits)} hits detected; record at least a few bars.")
 
@@ -47,21 +47,21 @@ def analyze(
     else:
         # Phase + downbeat from the opening bars only: a drifting player
         # makes any single global grid wrong by the end of the take.
-        beat = 60.0 / (bpm or _fold_tempo(tr.tempo_estimate))
+        beat = 60.0 / (bpm or _fold_tempo(tr.tempo_estimate, meter))
         early = times < times[0] + 2 * beat * beats_per_bar
         weights = np.array([2.0 if ({"kick", "snare"} & s) else 1.0 for s in insts])
-        origin, beat = _fit_phase(times[early], beat, weights[early])
-        origin = _pick_downbeat(times[early], [s for s, e in zip(insts, early) if e], origin, beat, beats_per_bar, by_time)
+        origin, beat = _fit_phase(times[early], beat, weights[early], slots)
+        origin = _pick_downbeat(times[early], [s for s, e in zip(insts, early) if e], origin, beat, meter, by_time)
         reference = "self"
     bar = beat * beats_per_bar
     origin = _first_downbeat(origin, times[0], bar, beat)
 
     # Quantize with a grid that follows the player's tempo, detect swing, repeat.
     s8 = s16 = 0.5
-    for _ in range(2):
-        x, pos, slot = _track(times, origin, beat, s8, s16, window=2 * beats_per_bar)
+    for _ in range(2 if meter.swingable else 0):
+        x, pos, slot = _track(times, origin, beat, meter.template(s8, s16), slots, window=2 * beats_per_bar)
         s8, s16 = _detect_swing(x)
-    x, pos, slot = _track(times, origin, beat, s8, s16, window=2 * beats_per_bar)
+    x, pos, slot = _track(times, origin, beat, meter.template(s8, s16), slots, window=2 * beats_per_bar)
 
     if reference == "self":
         origin, beat = _robust_fit(times, pos)  # the steady pulse that best fits the take
@@ -72,14 +72,18 @@ def analyze(
     times, pos, dev, local, slot = times[keep], pos[keep], dev[keep], local[keep], slot[keep]
     insts = [s for s, k in zip(insts, keep) if k]
 
-    spb = SLOTS_PER_BEAT * beats_per_bar
+    spb = meter.steps_per_bar
     bars_idx = slot // spb
     slot_in_bar = slot % spb
     n_bars = int(bars_idx.max() + 1)
 
     result = {
         "reference": reference,
+        "time_signature": meter.name,
         "beats_per_bar": beats_per_bar,
+        "beat_note": meter.beat_note,
+        "slots_per_beat": slots,
+        "count_labels": meter.count_labels(),
         "grid_bpm": _r(60.0 / beat),
         "target_bpm": _r(click["bpm"]) if click else None,
         "n_events": int(len(times)),
@@ -91,6 +95,11 @@ def analyze(
             "sixteenth_swing_pct": _r(s16 * 100),
             "feel": _swing_word(s8, s16),
             "note": "50% = straight, 66.7% = triplet swing (MPC-style percentages).",
+        } if meter.swingable else {
+            "eighth_swing_pct": None,
+            "sixteenth_swing_pct": None,
+            "feel": f"{meter.name}: 8th notes grouped in threes" if meter.compound else f"{meter.name}: straight 8ths",
+            "note": "Swing % isn't measured in this time signature.",
         },
         "per_instrument": {},
         "per_beat_position": {},
@@ -106,9 +115,9 @@ def analyze(
             "mean_offset_ms_vs_grid": _r(dev[m].mean()),
         }
 
-    beat_pos = slot_in_bar % SLOTS_PER_BEAT
-    for k, label in enumerate(["downbeats", "e", "&", "a"]):
-        m = beat_pos == k
+    beat_pos = slot_in_bar % slots
+    for label, ks in meter.position_groups():
+        m = np.isin(beat_pos, list(ks))
         if m.sum() >= 3:
             result["per_beat_position"][label] = {
                 "count": int(m.sum()),
@@ -128,7 +137,7 @@ def analyze(
         {
             "time_s": round(float(times[i]), 3),
             "bar": int(bars_idx[i] + 1),
-            "count": _count_name(slot_in_bar[i]),
+            "count": meter.count_name(int(slot_in_bar[i])),
             "instruments": sorted(insts[i]),
             "offset_ms": _r(local[i]),
         }
@@ -140,10 +149,14 @@ def analyze(
 # --- grid fitting -----------------------------------------------------------
 
 
-def _fold_tempo(bpm: float) -> float:
-    while bpm < 65:
+def _fold_tempo(bpm: float, meter: Meter) -> float:
+    """Bring an automatic tempo estimate into a plausible range for the meter's beat."""
+    lo, hi = (40, 130) if meter.compound else (65, 180)
+    if meter.compound:
+        bpm *= 2 / 3  # estimates usually lock to quarter-ish pulses; convert to dotted quarters
+    while bpm < lo:
         bpm *= 2
-    while bpm > 180:
+    while bpm > hi:
         bpm /= 2
     return bpm
 
@@ -153,13 +166,13 @@ def _first_downbeat(origin: float, t0: float, bar: float, beat: float) -> float:
     return origin + np.floor((t0 - origin + beat / 8) / bar) * bar
 
 
-def _fit_phase(times: np.ndarray, beat: float, weights: np.ndarray) -> tuple[float, float]:
+def _fit_phase(times: np.ndarray, beat: float, weights: np.ndarray, slots: int) -> tuple[float, float]:
     """Jointly fit beat length (+-8%) and 16th-grid phase to a short stretch of
     hits, minimising a truncated squared error. Returns (phase, beat)."""
     best = (np.inf, 0.0, beat)
     t = times - times[0]
     for b in beat * np.linspace(0.92, 1.08, 81):
-        step = b / SLOTS_PER_BEAT
+        step = b / slots
         phases = np.arange(0, step, 0.0005)
         d = (t[None, :] - phases[:, None] + step / 2) % step - step / 2
         cost = (np.minimum(np.abs(d), 0.03) ** 2 * weights).sum(axis=1)
@@ -169,17 +182,17 @@ def _fit_phase(times: np.ndarray, beat: float, weights: np.ndarray) -> tuple[flo
     return best[1], best[2]
 
 
-def _pick_downbeat(times, insts, origin, beat, bpb, by_time) -> float:
-    """Choose which 16th is beat 1: kick on 1, snare on 2 & 4, accents on beats."""
-    step = beat / SLOTS_PER_BEAT
+def _pick_downbeat(times, insts, origin, beat, meter: Meter, by_time) -> float:
+    """Choose which grid slot is beat 1: kick on 1, snare on the 2nd/4th beat, accents on beats."""
+    step = beat / meter.slots
     best, best_score = origin, -np.inf
-    for shift in range(SLOTS_PER_BEAT * bpb):
+    for shift in range(meter.steps_per_bar):
         o = origin + shift * step
-        slot = np.round((times - o) / step).astype(int) % (SLOTS_PER_BEAT * bpb)
+        slot = np.round((times - o) / step).astype(int) % meter.steps_per_bar
         score = 3.0 if slot[0] == 0 else 0.0  # people usually start on 1
         for t, s, sl in zip(times, insts, slot):
-            on_beat = sl % SLOTS_PER_BEAT == 0
-            beat_num = sl // SLOTS_PER_BEAT
+            on_beat = sl % meter.slots == 0
+            beat_num = sl // meter.slots
             score += on_beat * max(h.velocity for h in by_time[t]) / 127
             if "kick" in s and sl == 0:
                 score += 2
@@ -204,28 +217,27 @@ def _detect_swing(x: np.ndarray) -> tuple[float, float]:
     return min(max(s8, 0.5), 0.75), min(max(s16, 0.5), 0.75)
 
 
-def _track(times, origin, beat, s8, s16, window: float):
-    """Quantize hits in order against a swung 16th grid that is refit to the
-    last `window` beats after every hit, so it follows tempo drift.
+def _track(times, origin, beat, tpl: np.ndarray, slots: int, window: float):
+    """Quantize hits in order against the (possibly swung) grid template, refit
+    to the last `window` beats after every hit, so it follows tempo drift.
 
-    Returns continuous positions x (beats), grid positions pos, and 16th slot indices."""
-    tpl = np.array([0.0, s16 * s8, s8, s8 + s16 * (1 - s8), 1.0])
+    Returns continuous positions x (beats), grid positions pos, and slot indices."""
     a, p = origin, beat  # current local grid: t = a + p * position
-    xs, ps, slots = [], [], []
+    xs, ps, idx = [], [], []
     for i, t in enumerate(times):
         x = (t - a) / p
         b = np.floor(x)
         k = int(np.argmin(np.abs(x - b - tpl)))
         xs.append(x)
         ps.append(b + tpl[k])
-        slots.append(int(b) * SLOTS_PER_BEAT + k)
+        idx.append(int(b) * slots + k)
         P, T = np.array(ps), times[: i + 1]
         m = P >= ps[-1] - window
         if m.sum() >= 4 and np.ptp(P[m]) >= 2:
             a_new, p_new = _robust_fit(T[m], P[m])
             if 0.85 * beat < p_new < 1.15 * beat:
                 a, p = a_new, p_new
-    return np.array(xs), np.array(ps), np.array(slots)
+    return np.array(xs), np.array(ps), np.array(idx)
 
 
 def _local_residual(times, pos, beats_per_bar) -> np.ndarray:
@@ -300,11 +312,6 @@ def _swing_word(s8: float, s16: float) -> str:
     return f"8ths {word(s8)}, 16ths {word(s16)}"
 
 
-def _count_name(slot_in_bar: int) -> str:
-    beat, k = divmod(int(slot_in_bar), SLOTS_PER_BEAT)
-    return str(beat + 1) if k == 0 else f"{SLOT_NAMES[k]} of {beat + 1}"
-
-
 def _patterns(by_time, times, bars_idx, slot_in_bar, spb, n_bars) -> dict:
     """Per-bar step strings: X accent, x normal, g ghost, - rest."""
     vel_by_inst = defaultdict(list)
@@ -324,7 +331,7 @@ def _patterns(by_time, times, bars_idx, slot_in_bar, spb, n_bars) -> dict:
     shape = [tuple(r[n].replace("X", "x").replace("g", "x") for n in names) for r in rendered]
     main_shape, main_count = Counter(shape).most_common(1)[0]
     return {
-        "legend": "one char per 16th note; X=accent x=normal g=ghost -=rest",
+        "legend": "one char per 16th note (see count_labels); X=accent x=normal g=ghost -=rest",
         "main_groove": rendered[shape.index(main_shape)],
         "main_groove_bars": main_count,
         "bars_that_differ": [i + 1 for i, s in enumerate(shape) if s != main_shape],

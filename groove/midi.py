@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import mido
 
+from .meter import FOUR_FOUR, Meter
+
 TPB = 480  # ticks per beat
 GM = {
     "kick": 36, "snare": 38, "rim": 37, "hihat": 42, "hihat_closed": 42,
@@ -14,12 +16,13 @@ GM = {
 STEP_VELOCITY = {"X": 118, "x": 92, "g": 40}
 
 
-def _write(events: list[tuple[int, int, int]], bpm: float, path: str) -> None:
+def _write(events: list[tuple[int, int, int]], quarter_bpm: float, path: str, meter: Meter) -> None:
     """events: (tick, note, velocity). Writes note-on + short note-off pairs."""
     mid = mido.MidiFile(ticks_per_beat=TPB)
     track = mido.MidiTrack()
     mid.tracks.append(track)
-    track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
+    track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(quarter_bpm), time=0))
+    track.append(mido.MetaMessage("time_signature", numerator=meter.num, denominator=meter.den, time=0))
     msgs = []
     for tick, note, vel in events:
         msgs.append((tick, 1, mido.Message("note_on", channel=9, note=note, velocity=vel)))
@@ -32,27 +35,30 @@ def _write(events: list[tuple[int, int, int]], bpm: float, path: str) -> None:
     mid.save(path)
 
 
-def hits_to_midi(hits, bpm: float, path: str) -> None:
-    """Transcribed hits at their real (unquantized) times."""
-    events = [(int(round(h.time * bpm / 60 * TPB)), GM.get(h.instrument, 37), h.velocity) for h in hits]
-    _write(events, bpm, path)
+def hits_to_midi(hits, bpm: float, path: str, meter: Meter = FOUR_FOUR) -> None:
+    """Transcribed hits at their real (unquantized) times. bpm counts the meter's beat."""
+    q = bpm * meter.beat_quarters
+    events = [(int(round(h.time * q / 60 * TPB)), GM.get(h.instrument, 37), h.velocity) for h in hits]
+    _write(events, q, path, meter)
 
 
-def steps_tick(step: int, s8: float = 0.5, s16: float = 0.5) -> int:
-    """16th step index -> tick, applying the player's measured swing."""
+def steps_tick(step: int, s8: float = 0.5, s16: float = 0.5, meter: Meter = FOUR_FOUR) -> int:
+    """16th step index -> tick, applying the player's measured swing (x/4 only)."""
+    if not meter.swingable:
+        return step * TPB // 4  # straight 16ths
     beat, k = divmod(step, 4)
     frac = [0.0, s16 * s8, s8, s8 + s16 * (1 - s8)][k]
     return int(round((beat + frac) * TPB))
 
 
-def patterns_to_midi(bars: list[dict[str, str]], bpm: float, path: str, s8=0.5, s16=0.5) -> None:
-    """bars: list of {instrument: step string}; each bar is laid end to end."""
+def patterns_to_midi(bars: list[dict[str, str]], bpm: float, path: str, s8=0.5, s16=0.5,
+                     meter: Meter = FOUR_FOUR) -> None:
+    """bars: list of {instrument: step string}; each bar is laid end to end. bpm counts the meter's beat."""
     events, offset = [], 0
     for bar in bars:
-        length = max(len(s) for s in bar.values())
         for inst, steps in bar.items():
             for i, ch in enumerate(steps):
                 if ch in STEP_VELOCITY:
-                    events.append((offset + steps_tick(i, s8, s16), GM.get(inst, 37), STEP_VELOCITY[ch]))
-        offset += steps_tick(length, s8, s16)
-    _write(events, bpm, path)
+                    events.append((offset + steps_tick(i, s8, s16, meter), GM.get(inst, 37), STEP_VELOCITY[ch]))
+        offset += steps_tick(meter.steps_per_bar, s8, s16, meter)
+    _write(events, bpm * meter.beat_quarters, path, meter)

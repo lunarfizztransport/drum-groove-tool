@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy as np
 import soundfile as sf
 
+from .meter import FOUR_FOUR, Meter
 from .transcribe import SR
 
 ROCK = {  # one bar of 16ths
@@ -17,6 +18,14 @@ FILL = {
     "snare": "x-x-x-x-xxxx----",
     "tom":   "------------x-x-",
     "kick":  "----------------",
+}
+# (groove, fill) per time signature; one char per 16th note
+GROOVES = {
+    "4/4": (ROCK, FILL),
+    "3/4": ({"kick": "x-----------", "snare": "----x---x---", "hihat": "x-x-x-x-x-x-"},
+            {"snare": "x-x-x-x-----", "tom": "--------x-x-"}),
+    "6/8": ({"kick": "x---------x-", "snare": "------x-----", "hihat": "x-x-x-x-x-x-"},
+            {"snare": "x-x-x-------", "tom": "------x-x-x-"}),
 }
 
 
@@ -56,32 +65,39 @@ def synth(
     snare_late_ms: float = 15.0,
     jitter_ms: float = 6.0,
     swing: float = 0.5,
+    meter: Meter = FOUR_FOUR,
     fill_last_bar: bool = True,
     seed: int = 0,
 ) -> None:
     """Tempo ramps from bpm to bpm+rush_bpm; snare sits snare_late_ms behind;
     every hit gets Gaussian jitter; swing moves offbeat 8ths (0.5 = straight)."""
+    if meter.name not in GROOVES:
+        raise ValueError(f"synth supports {', '.join(GROOVES)}, not {meter.name}")
+    groove, fill = GROOVES[meter.name]
     rng = np.random.default_rng(seed)
-    total_beats = bars * 4
+    total_beats = bars * meter.beats
     # Integrate a linearly ramping tempo to get the time of each beat.
     tempo = np.linspace(bpm, bpm + rush_bpm, total_beats + 1)
     beat_times = np.concatenate([[0.5], 0.5 + np.cumsum(60.0 / tempo[:-1])])
     y = np.zeros(int((beat_times[-1] + 1.0) * SR))
 
     for b in range(bars):
-        pattern = FILL if (fill_last_bar and b == bars - 1) else ROCK
+        pattern = fill if (fill_last_bar and b == bars - 1) else groove
         for inst, steps in pattern.items():
             for i, ch in enumerate(steps):
                 if ch != "x":
                     continue
-                beat, k = divmod(i, 4)
-                frac = [0.0, 0.25 * swing / 0.5, swing, swing + 0.5 * (1 - swing)][k]
-                g = b * 4 + beat
+                beat, k = divmod(i, meter.slots)
+                if meter.swingable:
+                    frac = [0.0, 0.25 * swing / 0.5, swing, swing + 0.5 * (1 - swing)][k]
+                else:
+                    frac = k / meter.slots
+                g = b * meter.beats + beat
                 t = beat_times[g] + frac * (beat_times[g + 1] - beat_times[g])
                 t += rng.normal(0, jitter_ms / 1000)
                 if inst == "snare":
                     t += snare_late_ms / 1000
-                gain = 1.0 if inst != "hihat" or i % 4 == 0 else 0.6
+                gain = 1.0 if inst != "hihat" or i % meter.slots == 0 else 0.6
                 s = VOICES[inst](rng) * gain
                 start = int(t * SR)
                 y[start : start + len(s)] += s[: len(y) - start]

@@ -31,15 +31,19 @@ def main(argv=None) -> int:
     r.add_argument("name", nargs="?", help="take name (default: date and time)")
     r.add_argument("--bpm", type=float, help="play a click at this tempo (recommended)")
     r.add_argument("--bars", type=int, default=8)
-    r.add_argument("--beats-per-bar", type=int, default=4)
+    r.add_argument("--time", default="4/4", help="time signature, e.g. 4/4, 3/4, 6/8, 7/8, 12/8 (default 4/4)")
+    r.add_argument("--bpm-note", choices=["beat", "quarter", "eighth", "dotted-quarter"], default="beat",
+                   help="which note your --bpm counts, if not the beat: quarter, eighth, or dotted-quarter (e.g. a metronome set in 8th notes for 6/8)")
     r.add_argument("--count-in", type=int, default=1, help="bars of count-in")
 
     sub.add_parser("calibrate", help="measure audio round-trip latency (speakers, not headphones)")
 
     a = sub.add_parser("analyze", help="transcribe + analyze a take, then ask Claude for coaching")
     a.add_argument("take", help="take name (e.g. 2026-10-06_1039), take folder, or any .wav file")
-    a.add_argument("--bpm", type=float, help="tempo hint when there's no click sidecar file")
-    a.add_argument("--beats-per-bar", type=int, default=4)
+    a.add_argument("--bpm", type=float, help="tempo you played at, if there was no click from `record`")
+    a.add_argument("--time", help="time signature, e.g. 4/4, 3/4, 6/8, 7/8, 12/8 (default 4/4); remembered for the take")
+    a.add_argument("--bpm-note", choices=["beat", "quarter", "eighth", "dotted-quarter"], default="beat",
+                   help="which note your --bpm counts, if not the beat: quarter, eighth, or dotted-quarter (e.g. a metronome set in 8th notes for 6/8)")
     a.add_argument("--mode", choices=["drums", "generic"], default="drums",
                    help="generic = any percussive instrument; timing only, no kit labels")
     a.add_argument("--goal", help="what you're working toward / style, passed to Claude")
@@ -57,9 +61,16 @@ def main(argv=None) -> int:
     s.add_argument("--rush", type=float, default=4.0, help="bpm gained over the take")
     s.add_argument("--snare-late", type=float, default=15.0, help="ms the snare sits behind")
     s.add_argument("--jitter", type=float, default=6.0, help="random timing spread, ms")
-    s.add_argument("--swing", type=float, default=0.5, help="offbeat 8th position, 0.5-0.75")
+    s.add_argument("--swing", type=float, default=0.5, help="offbeat 8th position, 0.5-0.75 (x/4 only)")
+    s.add_argument("--time", default="4/4", help="4/4, 3/4, or 6/8")
 
     args = ap.parse_args(argv)
+    from .meter import Meter
+
+    try:
+        meter = Meter.parse(args.time) if getattr(args, "time", None) else None
+    except ValueError as e:
+        ap.error(str(e))
 
     if args.cmd == "record":
         from datetime import datetime
@@ -67,7 +78,8 @@ def main(argv=None) -> int:
         from .audio import record
         folder = TAKES / (args.name or datetime.now().strftime("%Y-%m-%d_%H%M"))
         folder.mkdir(parents=True, exist_ok=True)
-        record(str(folder / RECORDING), args.bpm, args.bars, args.beats_per_bar, args.count_in)
+        bpm = meter.beat_bpm(args.bpm, args.bpm_note) if args.bpm else None
+        record(str(folder / RECORDING), bpm, args.bars, meter, args.count_in)
         print(f"Take saved in {folder}\nAnalyze it with: groove analyze {folder.name}")
     elif args.cmd == "calibrate":
         from .audio import calibrate
@@ -76,16 +88,16 @@ def main(argv=None) -> int:
         from .synth import synth
         folder = TAKES / args.name
         folder.mkdir(parents=True, exist_ok=True)
-        synth(str(folder / RECORDING), args.bpm, args.bars, args.rush, args.snare_late, args.jitter, args.swing)
+        synth(str(folder / RECORDING), args.bpm, args.bars, args.rush, args.snare_late, args.jitter, args.swing, meter)
         print(f"Wrote {folder / RECORDING}")
     elif args.cmd == "analyze":
-        return run_analyze(args)
+        return run_analyze(args, meter)
     elif args.cmd == "report":
         _report(_take_folder(args.take), args.no_open)
     return 0
 
 
-def run_analyze(args) -> int:
+def run_analyze(args, meter) -> int:
     from .analyze import analyze
     from .coach import coach, pattern_bars, render_grid, to_markdown
     from .midi import hits_to_midi, patterns_to_midi
@@ -94,13 +106,23 @@ def run_analyze(args) -> int:
     out = _take_folder(args.take)
     audio = out / RECORDING
 
+    from .meter import FOUR_FOUR, Meter
+
     sidecar = Path(str(audio) + ".json")
-    click, bpb = None, args.beats_per_bar
+    click = None
     if sidecar.exists():
         meta = json.loads(sidecar.read_text())
         click = {"bpm": meta["bpm"], "origin": meta["origin"]}
-        bpb = meta.get("beats_per_bar", bpb)
-        print(f"Using click grid from {sidecar.name}: {meta['bpm']} bpm")
+        meter = Meter.parse(meta.get("time") or f"{meta.get('beats_per_bar', 4)}/4")
+        print(f"Using click grid from {sidecar.name}: {meter.name} at {meta['bpm']:g} bpm")
+    elif meter is None:
+        # Re-analyzing: keep the time signature the take was analyzed in before.
+        prev = out / "analysis.json"
+        ts = json.loads(prev.read_text()).get("time_signature") if prev.exists() else None
+        meter = Meter.parse(ts) if ts else FOUR_FOUR
+    bpm = meter.beat_bpm(args.bpm, args.bpm_note) if args.bpm else None
+    if bpm and args.bpm_note not in ("beat", None) and not click:
+        print(f"Tempo: {args.bpm:g} {args.bpm_note} notes = {bpm:.1f} bpm in {meter.beat_note}s")
 
     # Drop anything in the count-in (minus a beat of slack for early hits).
     start = max(0.0, click["origin"] - 60.0 / click["bpm"] / 2) if click else 0.0
@@ -108,13 +130,13 @@ def run_analyze(args) -> int:
     print(f"Detected {len(tr.hits)} hits ({len({h.time for h in tr.hits})} onsets)")
     (out / "hits.json").write_text(json.dumps(tr.to_dict(), indent=1))
 
-    result = analyze(tr, bpm=args.bpm, beats_per_bar=bpb, click=click)
+    result = analyze(tr, bpm=bpm, meter=meter, click=click)
     (out / "analysis.json").write_text(json.dumps(result, indent=1))
-    bpm = result["grid_bpm"]
-    hits_to_midi(tr.hits, bpm, str(out / "transcription.mid"))
+    bpm = result["grid_bpm"]  # in beats (dotted quarters in 6/8)
+    hits_to_midi(tr.hits, bpm, str(out / "transcription.mid"), meter)
     print_summary(result)
     print("\nMain groove as heard:")
-    print(render_grid([result["patterns"]["main_groove"]]))
+    print(render_grid([result["patterns"]["main_groove"]], result["count_labels"]))
 
     if args.no_coach:
         _report(out, args.no_open)
@@ -137,22 +159,22 @@ def run_analyze(args) -> int:
         _report(out, args.no_open)  # still give them the timing report
         return 1
 
-    spb = 4 * bpb
-    s8 = result["swing"]["eighth_swing_pct"] / 100
-    s16 = result["swing"]["sixteenth_swing_pct"] / 100
+    spb = meter.steps_per_bar
+    s8 = (result["swing"]["eighth_swing_pct"] or 50) / 100
+    s16 = (result["swing"]["sixteenth_swing_pct"] or 50) / 100
     groove = _kit_names(result["patterns"]["main_groove"])
     pdir = out / "patterns"
     pdir.mkdir(exist_ok=True)
     for kind, pats in (("variation", c.variations), ("fill", c.fills)):
         for i, p in enumerate(pats, 1):
             bars = pattern_bars(p, spb)
-            patterns_to_midi(bars, bpm, str(pdir / f"{kind}{i}.mid"), s8, s16)
+            patterns_to_midi(bars, bpm, str(pdir / f"{kind}{i}.mid"), s8, s16, meter)
             # Hear it in context: 3 bars of your groove, then the pattern, then back to 1.
             in_ctx = [groove] * (3 if kind == "fill" else 2) + bars + [groove]
-            patterns_to_midi(in_ctx, bpm, str(pdir / f"{kind}{i}_in_context.mid"), s8, s16)
+            patterns_to_midi(in_ctx, bpm, str(pdir / f"{kind}{i}_in_context.mid"), s8, s16, meter)
 
-    (out / "coaching.json").write_text(c.model_dump_json(indent=1))
-    md = to_markdown(c, spb)
+    (out / "coaching.json").write_text(json.dumps({**c.model_dump(), "for_time_signature": meter.name}, indent=1))
+    md = to_markdown(c, spb, result["count_labels"])
     (out / "coaching.md").write_text(md)
     print("\n" + md)
     _report(out, args.no_open)
@@ -226,14 +248,16 @@ def _kit_names(bar: dict[str, str]) -> dict[str, str]:
 def print_summary(r: dict) -> None:
     t, sw, tempo = r["tightness"], r["swing"], r["tempo"]
     ref = "vs click" if r["reference"] == "click" else "vs your own pulse (no click)"
-    print(f"\n== {r['n_bars']} bars at ~{r['grid_bpm']} bpm, timing {ref} ==")
+    unit = "" if r.get("beat_note", "quarter note") == "quarter note" else f" ({r['beat_note']}s)"
+    print(f"\n== {r.get('time_signature', '4/4')}, {r['n_bars']} bars at ~{r['grid_bpm']} bpm{unit}, timing {ref} ==")
     print(f"Tightness: spread {t['std_ms']} ms, {t['pct_within_10ms']}% of hits within 10 ms")
     if "verdict" in tempo:
         print(f"Tempo: {tempo['start_bpm']} -> {tempo['end_bpm']} bpm "
               f"({tempo['drift_bpm_per_minute']:+} bpm/min, {tempo['verdict']})")
     if "mean_offset_vs_click_ms" in tempo:
         print(f"Average vs click: {tempo['mean_offset_vs_click_ms']:+} ms (+ = behind)")
-    print(f"Swing: {sw['feel']} (8ths {sw['eighth_swing_pct']}%, 16ths {sw['sixteenth_swing_pct']}%)")
+    if sw["eighth_swing_pct"] is not None:
+        print(f"Swing: {sw['feel']} (8ths {sw['eighth_swing_pct']}%, 16ths {sw['sixteenth_swing_pct']}%)")
     for name, s in r["per_instrument"].items():
         print(f"  {name:>6}: {s['mean_offset_ms_vs_groove']:+6.1f} ms vs groove, spread {s['std_ms']} ms ({s['count']} hits)")
 

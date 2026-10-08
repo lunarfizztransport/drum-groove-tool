@@ -12,19 +12,28 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from .meter import FOUR_FOUR, Meter
 from .transcribe import SR, transcribe
 
 CONFIG = Path.home() / ".config" / "groove-tool" / "latency.json"
 
 
-def click_track(bpm: float, beats: int, beats_per_bar: int = 4, tail: float = 1.0) -> np.ndarray:
+def click_track(bpm: float, beats: int, meter: Meter = FOUR_FOUR, tail: float = 1.0) -> np.ndarray:
+    """Click on every beat (bpm counts beats). Compound meters like 6/8 also
+    click each 8th note, softer, so the three-per-beat feel is audible."""
     beat = 60.0 / bpm
+    sub = 3 if meter.compound else 1
     y = np.zeros(int((beats * beat + tail) * SR), dtype=np.float32)
     t = np.arange(int(0.03 * SR)) / SR
-    for i in range(beats):
-        freq = 1600 if i % beats_per_bar == 0 else 1000
-        blip = 0.6 * np.sin(2 * np.pi * freq * t) * np.exp(-t * 120)
-        start = int(round(i * beat * SR))
+    for i in range(beats * sub):
+        if i % (meter.beats * sub) == 0:
+            freq, amp = 1600, 0.6  # bar start
+        elif i % sub == 0:
+            freq, amp = 1000, 0.6  # beat
+        else:
+            freq, amp = 1000, 0.25  # 8th-note subdivision
+        blip = amp * np.sin(2 * np.pi * freq * t) * np.exp(-t * 120)
+        start = int(round(i * beat / sub * SR))
         y[start : start + len(blip)] += blip
     return y
 
@@ -36,24 +45,26 @@ def load_latency() -> float:
         return 0.0
 
 
-def record(path: str, bpm: float | None, bars: int, beats_per_bar: int = 4, count_in_bars: int = 1) -> dict:
-    """Record to `path`. With bpm set, plays a click and writes `path`.json with the grid."""
+def record(path: str, bpm: float | None, bars: int, meter: Meter = FOUR_FOUR, count_in_bars: int = 1) -> dict:
+    """Record to `path`. With bpm set (in beats), plays a click and writes `path`.json with the grid."""
+    beats_per_bar = meter.beats
     import sounddevice as sd
 
     if bpm:
         beat = 60.0 / bpm
-        click = click_track(bpm, (bars + count_in_bars) * beats_per_bar, beats_per_bar)
-        print(f"Count-in: {count_in_bars} bar(s) at {bpm} bpm, then play {bars} bars. Headphones on!")
+        click = click_track(bpm, (bars + count_in_bars) * beats_per_bar, meter)
+        unit = "" if meter.den == 4 else f" ({meter.beat_note}s)"
+        print(f"Count-in: {count_in_bars} bar(s) of {meter.name} at {bpm:g} bpm{unit}, then play {bars} bars. Headphones on!")
         audio = sd.playrec(click, samplerate=SR, channels=1, dtype="float32")
     else:
         beat = None
-        seconds = bars * beats_per_bar * 0.6 + 2  # ~100 bpm guess when no tempo given
+        seconds = bars * beats_per_bar * meter.beat_quarters * 0.6 + 2  # ~100 bpm guess when no tempo given
         print(f"Recording {seconds:.0f}s without a click. Go!")
         audio = sd.rec(int(seconds * SR), samplerate=SR, channels=1, dtype="float32")
     sd.wait()
     sf.write(path, audio[:, 0], SR)
 
-    meta = {"beats_per_bar": beats_per_bar}
+    meta = {"time": meter.name, "beats_per_bar": beats_per_bar}
     if bpm:
         latency = load_latency()
         meta.update(
