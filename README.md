@@ -28,6 +28,18 @@ record ─▶ find the hits ─▶ measure timing ─▶ Claude coaching ─▶ 
 It's made for drummers, but `--mode generic` measures timing for any
 rhythmic instrument (guitar strumming, shaker, hand percussion).
 
+### How this was built
+
+Built with [Claude Code](https://claude.com/claude-code). I designed the
+features, tested them on my own kit, and directed the implementation. The code
+was written with Claude Code. My decisions shaped the tool:
+
+- framing AI suggestions as ideas to learn from, not parts to copy;
+- using only hand-verified research instead of AI-written citations;
+- supporting time signatures like 6/8;
+- adding phone-recording uploads and e-kit support;
+- fixing problems found by testing on a real kit, such as missed kicks and extra hits from speaker echo.
+
 ---
 
 ## What you need
@@ -187,6 +199,7 @@ Useful options for `analyze`:
 | `--bpm 120` | The tempo you played at, for recordings made without the tool's click |
 | `--time 6/8` | Time signature (default 4/4). Remembered for the take after the first time |
 | `--bpm-note quarter` | Which note your `--bpm` counts, if it isn't the beat (see below) |
+| `--kit phone` | Which learned kit profile to use (see "Teach it your kit") |
 | `--mode generic` | Any instrument: timing only, no drum labels |
 
 ### Using a recording from your phone or another mic
@@ -225,6 +238,52 @@ Anthropic's paid API at roughly **10–25 cents per analyzed take**. To set it u
 
 Keep the key private and never commit it. Use `--no-coach` (or press Enter at
 the key prompt) to skip coaching entirely.
+
+## Electronic kits (best results)
+
+If you play an e-kit (Alesis Nitro, Roland TD, Yamaha DTX…), connect the drum
+module's **USB port** to the Mac and record with `--midi`:
+
+```bash
+.venv/bin/python -m groove record practice --bpm 80 --midi
+.venv/bin/python -m groove analyze practice
+```
+
+The tool reads every pad hit straight from the kit: which drum, how hard, and
+exactly when (to about a millisecond). That means no microphone, no kit
+teaching, no confusion from speaker echo, and toms and cymbals included. The
+click can play out loud because no mic is listening, and "ahead of / behind
+the click" is measured exactly.
+
+Pads are recognized using the Alesis Nitro's default note numbers, which
+follow the General MIDI drum layout most kits use. If your module uses a custom
+pad map, the report lists the notes it didn't recognize. You can also analyze a
+`.mid` file exported from GarageBand or another app: `analyze ~/Downloads/take.mid --bpm 80`.
+
+## Teach it your kit (better drum labels)
+
+Out of the box, the tool guesses which drum was hit from fixed frequency
+ranges. That works on clean audio but mixes up kick and snare on phone and
+laptop mics, which squash the sound. Teaching it your kit fixes that: you play
+a few hits on each drum, and it learns what *your* drums sound like on *that*
+mic in *that* room.
+
+```bash
+.venv/bin/python -m groove learn-kit                    # guided, with the computer mic
+.venv/bin/python -m groove learn-kit ~/Downloads/"Kit.m4a" --name phone
+```
+
+For a file (e.g. a phone recording), play **4 kicks, wait 3 seconds, 4 snares,
+wait, 4 closed hi-hats**. Learn one profile per setup, such as `laptop` and
+`phone`. A profile called `default` is used automatically; pick another with
+`analyze --kit phone`. Each take remembers its profile, and the report says
+which one was used.
+
+Each hit in a take is then explained as a mix of your drums' learned sounds,
+so a kick and hi-hat played together come out as both. In testing on
+phone-like audio, wrongly detected snares dropped from about 7 per take to 1.
+Kick and hi-hat detection matched the built-in rules. Toms and cymbals aren't
+learned yet.
 
 ## Time signatures
 
@@ -266,7 +325,7 @@ that the analysis finds them.
 ## How it works
 
 - **Finding hits:** [librosa](https://librosa.org) onset detection at about 3 ms resolution. Each drum's timing is refined from its own frequency range, so a laid-back snare isn't merged with the hi-hat it lands alongside.
-- **Telling drums apart:** a simple frequency split (kick below 150 Hz, snare 180–2500 Hz, hi-hat above 6 kHz). It's good enough for timing, but toms and cymbals get folded into those three. A trained drum-transcription model (e.g. madmom) could replace `transcribe.label_onsets`.
+- **Telling drums apart:** with a learned kit profile (`groove/kit.py`), each hit's spectrum is explained as a non-negative mix of your drums' learned spectra. Without one, it uses a simple frequency split (kick below 150 Hz, snare 180–2500 Hz, hi-hat above 6 kHz). Either way, toms and cymbals get folded into kick, snare and hi-hat.
 - **Following your tempo:** the beat grid re-fits itself every 2 bars, so a drummer who speeds up is still matched to the right notes.
 - **Coaching:** the timing numbers and your transcribed groove go to `claude-opus-5-5`, which returns structured feedback and patterns. Those are turned into MIDI using your own measured swing.
 - **Limits:** the grid is 16th notes in every time signature. In x/4, triplet fills are snapped to the nearest 16th (use 6/8 or 12/8 for triplet-based grooves). Short takes (under about 30 seconds) give shaky tempo trends.
@@ -280,6 +339,9 @@ groove/
   coach.py        metrics → Claude feedback + patterns
   report.py       everything → report.html
   research.py     verified research sources and notes
+  kit.py          learned kit profiles for telling drums apart
+  meter.py        time signatures: beats, grid, counting
+  midiin.py       e-kit recording and MIDI file import
   midi.py         hits/patterns → .mid files
   audio.py        click track, recording, latency calibration
   synth.py        fake takes for testing

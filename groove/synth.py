@@ -15,17 +15,17 @@ ROCK = {  # one bar of 16ths
     "hihat": "x-x-x-x-x-x-x-x-",
 }
 FILL = {
-    "snare": "x-x-x-x-xxxx----",
-    "tom":   "------------x-x-",
-    "kick":  "----------------",
+    "snare":     "x-x-x-x-xxxx----",
+    "tom_high":  "------------x---",
+    "tom_floor": "--------------x-",
 }
 # (groove, fill) per time signature; one char per 16th note
 GROOVES = {
     "4/4": (ROCK, FILL),
     "3/4": ({"kick": "x-----------", "snare": "----x---x---", "hihat": "x-x-x-x-x-x-"},
-            {"snare": "x-x-x-x-----", "tom": "--------x-x-"}),
+            {"snare": "x-x-x-x-----", "tom_high": "--------x---", "tom_floor": "----------x-"}),
     "6/8": ({"kick": "x---------x-", "snare": "------x-----", "hihat": "x-x-x-x-x-x-"},
-            {"snare": "x-x-x-------", "tom": "------x-x-x-"}),
+            {"snare": "x-x-x-------", "tom_high": "------x-x---", "tom_floor": "----------x-"}),
 }
 
 
@@ -49,12 +49,25 @@ def _hihat(rng):
     return 0.25 * n * np.exp(-t * 70)
 
 
-def _tom(rng):
-    t = np.arange(int(0.3 * SR)) / SR
-    return 0.7 * np.sin(2 * np.pi * 110 * t) * np.exp(-t * 12)
+def _tom(freq):
+    def voice(rng):
+        t = np.arange(int(0.35 * SR)) / SR
+        f = freq * (1 + 0.15 * np.exp(-t * 30))  # slight pitch drop, like a real tom
+        body = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 10)
+        stick = rng.standard_normal(len(t)) * np.exp(-t * 200) * 0.15
+        return 0.7 * (body + stick)
+    return voice
 
 
-VOICES = {"kick": _kick, "snare": _snare, "hihat": _hihat, "tom": _tom}
+def _crash(rng):
+    t = np.arange(int(1.2 * SR)) / SR
+    n = rng.standard_normal(len(t))
+    n = n - np.convolve(n, np.ones(8) / 8, "same")  # high-pass: keep the shimmer
+    return 0.35 * n * np.exp(-t * 3)
+
+
+VOICES = {"kick": _kick, "snare": _snare, "hihat": _hihat,
+          "tom_high": _tom(180), "tom_mid": _tom(130), "tom_floor": _tom(90), "crash": _crash}
 
 
 def synth(

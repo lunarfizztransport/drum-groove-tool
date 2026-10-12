@@ -10,7 +10,7 @@ timing analysis, which only needs onset times.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 import librosa
 import numpy as np
@@ -25,6 +25,9 @@ BANDS = {
     "hihat": (6000, 16000),
 }
 RISE_DB = 6.0  # band must jump at least this much at the onset to count
+# Where to look for each drum's attack when fine-tuning its hit time.
+TIMING_BANDS = {**BANDS, "tom_high": (100, 600), "tom_mid": (80, 500), "tom_floor": (50, 400),
+                "crash": (3000, 16000), "ride": (2000, 12000)}
 
 
 @dataclass
@@ -40,26 +43,30 @@ class Transcription:
     tempo_estimate: float
     duration: float
     mode: str
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "tempo_estimate": self.tempo_estimate,
             "duration": self.duration,
             "mode": self.mode,
+            "warnings": self.warnings,
             "hits": [asdict(h) for h in self.hits],
         }
 
 
-def transcribe(path: str, mode: str = "drums", start: float = 0.0) -> Transcription:
+def transcribe(path: str, mode: str = "drums", start: float = 0.0, kit: dict | None = None) -> Transcription:
     """Detect hits in an audio file.
 
     mode="drums" labels each onset as kick/snare/hihat (possibly several at once).
     mode="generic" labels every onset "hit" -- use this for hand percussion,
     guitar strums, tapping, or anything else where you only care about timing.
     Hits before `start` seconds (e.g. a count-in) are dropped.
+    kit: a learned kit profile (see kit.py); much better labels than the band rules.
     """
     y, sr = librosa.load(path, sr=SR, mono=True)
     duration = len(y) / sr
+    warnings = audio_checks(y, sr, mode)
 
     env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP, lag=1, max_size=3)
     frames = librosa.onset.onset_detect(
@@ -77,7 +84,7 @@ def transcribe(path: str, mode: str = "drums", start: float = 0.0) -> Transcript
     keep = times >= start
     frames, times = frames[keep], times[keep]
     if len(frames) == 0:
-        return Transcription([], tempo, duration, mode)
+        return Transcription([], tempo, duration, mode, warnings)
 
     S = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
     velocities = _velocities(S, frames)
@@ -85,20 +92,44 @@ def transcribe(path: str, mode: str = "drums", start: float = 0.0) -> Transcript
     if mode == "generic":
         hits = [Hit(round(float(t), 4), "hit", v) for t, v in zip(times, velocities)]
     else:
-        labels = label_onsets(S, frames, sr)
-        bands = _band_db(S, sr)
+        if kit:
+            from .kit import label
+
+            labels = label(S, frames, kit, sr)
+        else:
+            labels = label_onsets(S, frames, sr)
+        bands = _band_db(S, sr, TIMING_BANDS)
         hits = [
             Hit(round(float(_refine(bands[inst], f, t, sr)), 4), inst, v)
             for f, t, v, insts in zip(frames, times, velocities, labels)
             for inst in insts
         ]
-    return Transcription(hits, tempo, duration, mode)
+    return Transcription(hits, tempo, duration, mode, warnings)
 
 
-def _band_db(S: np.ndarray, sr: int) -> dict[str, np.ndarray]:
+def audio_checks(y: np.ndarray, sr: int, mode: str = "drums") -> list[str]:
+    """Recording problems that make results unreliable, in plain language."""
+    out = []
+    peak = np.abs(y).max()
+    clipped = (np.abs(y) >= 0.99 * peak).mean() if peak > 0 else 0
+    if peak >= 0.98 and clipped > 0.0003:
+        out.append("The recording is distorting: the drums were too loud for the mic. Move it further from "
+                   "the kit or turn the input volume down (System Settings > Sound > Input).")
+    if mode == "drums":
+        S = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=512)) ** 2
+        f = librosa.fft_frequencies(sr=sr, n_fft=N_FFT)
+        low = S[(f >= 40) & (f < 150)].sum()
+        mid = S[(f >= 150) & (f < 2000)].sum()
+        if low < mid * 10 ** (-10 / 10):  # bass more than 10 dB below the mid-range
+            out.append("The recording has very little bass, so the kick drum is hard to hear. Laptop mics "
+                       "often miss it; a phone placed a few feet in front of the kick usually works better.")
+    return out
+
+
+def _band_db(S: np.ndarray, sr: int, bands: dict = BANDS) -> dict[str, np.ndarray]:
     freqs = librosa.fft_frequencies(sr=sr, n_fft=N_FFT)
     out = {}
-    for name, (lo, hi) in BANDS.items():
+    for name, (lo, hi) in bands.items():
         idx = (freqs >= lo) & (freqs < hi)
         out[name] = 10 * np.log10((S[idx] ** 2).sum(axis=0) + 1e-10)
     return out

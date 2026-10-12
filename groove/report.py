@@ -48,6 +48,9 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
     slots = a.get("slots_per_beat", 4)
     grid = lambda bars: _grid(bars, labels, slots)  # noqa: E731
     ts = a.get("time_signature", "4/4")
+    kit_note = ("drums read directly from your e-kit (MIDI)" if a.get("source") == "midi"
+                else f"drums identified with your \u2018{escape(a['kit'])}\u2019 kit profile" if a.get("kit")
+                else "drums identified by built-in rules (rough; run learn-kit for better labels)")
     beat_note = a.get("beat_note", "quarter note")
 
     tiles = [
@@ -78,10 +81,14 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
         f"<header><p class='eyebrow'>Groove report</p><h1>{escape(take)}</h1>"
         f"<p class='sub'>{ts} · {a['n_bars']} bars · {a['grid_bpm']:.0f} bpm"
         f"{'' if beat_note == 'quarter note' else f' ({beat_note}s)'} · "
-        f"{'played to a click' if click else 'no click (measured against your own steady pulse)'}</p></header>",
+        f"{'played to a click' if click else 'no click (measured against your own steady pulse)'}"
+        f" · {kit_note}</p></header>",
         f"<section class='tiles'>{''.join(tiles)}</section>",
     ]
 
+    for w in a.get("audio_warnings", []):
+        body.append(f"<section class='card warn'><p><strong>Recording problem:</strong> {escape(w)} "
+                    "Timing results are still useful; which-drum labels may be wrong.</p></section>")
     stale = c and c.get("for_time_signature", "4/4") != ts
     if stale:
         body.append(f"<section class='card warn'><p><strong>Heads up:</strong> the coaching on this page was written "

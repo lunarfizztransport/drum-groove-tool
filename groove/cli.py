@@ -21,6 +21,7 @@ import anthropic
 
 TAKES = Path(__file__).resolve().parent.parent / "takes"
 RECORDING = "recording.wav"
+RECORDING_MIDI = "recording.mid"  # e-kit takes
 
 
 def main(argv=None) -> int:
@@ -35,8 +36,25 @@ def main(argv=None) -> int:
     r.add_argument("--bpm-note", choices=["beat", "quarter", "eighth", "dotted-quarter"], default="beat",
                    help="which note your --bpm counts, if not the beat: quarter, eighth, or dotted-quarter (e.g. a metronome set in 8th notes for 6/8)")
     r.add_argument("--count-in", type=int, default=1, help="bars of count-in")
+    r.add_argument("--midi", action="store_true", help="record an e-kit over USB MIDI instead of the microphone "
+                                                       "(exact drums and timing; the click can play out loud)")
+    r.add_argument("--port", help="MIDI device name to use with --midi (default: the connected e-kit)")
 
     sub.add_parser("calibrate", help="measure audio round-trip latency (speakers, not headphones)")
+
+    ck = sub.add_parser("click", help="just play a metronome (e.g. in headphones while your phone records)")
+    ck.add_argument("--bpm", type=float, required=True)
+    ck.add_argument("--time", default="4/4", help="time signature, e.g. 4/4, 3/4, 6/8")
+    ck.add_argument("--bpm-note", choices=["beat", "quarter", "eighth", "dotted-quarter"], default="beat")
+    ck.add_argument("--minutes", type=float, default=5, help="how long to play (default 5; Ctrl+C stops early)")
+
+    lk = sub.add_parser("learn-kit", help="teach the tool what your drums sound like on this mic")
+    lk.add_argument("file", nargs="?", help="a recording of 4 kicks, pause, 4 snares, pause, 4 hi-hats "
+                                            "(e.g. from your phone). Leave out to record with the computer mic")
+    lk.add_argument("--name", default="default", help="profile name, e.g. phone or laptop (default: default)")
+    lk.add_argument("--drums", help="drums in the order you played them, comma-separated, from: kick, snare, "
+                                    "hihat, tom_high, tom_mid, tom_floor, crash, ride (default for a file: "
+                                    "kick,snare,hihat; with the mic you'll be asked)")
 
     a = sub.add_parser("analyze", help="transcribe + analyze a take, then ask Claude for coaching")
     a.add_argument("take", help="take name (e.g. 2026-10-06_1039), take folder, or any .wav file")
@@ -46,6 +64,8 @@ def main(argv=None) -> int:
                    help="which note your --bpm counts, if not the beat: quarter, eighth, or dotted-quarter (e.g. a metronome set in 8th notes for 6/8)")
     a.add_argument("--mode", choices=["drums", "generic"], default="drums",
                    help="generic = any percussive instrument; timing only, no kit labels")
+    a.add_argument("--kit", help="kit profile from learn-kit to tell drums apart (default: the take's last one, "
+                                 "else 'default' if it exists)")
     a.add_argument("--goal", help="what you're working toward / style, passed to Claude")
     a.add_argument("--no-coach", action="store_true", help="skip the Claude step")
     a.add_argument("--no-open", action="store_true", help="don't open the report in a browser")
@@ -79,11 +99,41 @@ def main(argv=None) -> int:
         folder = TAKES / (args.name or datetime.now().strftime("%Y-%m-%d_%H%M"))
         folder.mkdir(parents=True, exist_ok=True)
         bpm = meter.beat_bpm(args.bpm, args.bpm_note) if args.bpm else None
-        record(str(folder / RECORDING), bpm, args.bars, meter, args.count_in)
+        if args.midi:
+            from .midiin import record_midi
+            if not bpm:
+                sys.exit("MIDI recording needs a tempo for the click: add --bpm, e.g. --bpm 80")
+            try:
+                record_midi(str(folder / RECORDING_MIDI), bpm, args.bars, meter, args.count_in, args.port)
+            except RuntimeError as e:
+                sys.exit(str(e))
+        else:
+            record(str(folder / RECORDING), bpm, args.bars, meter, args.count_in)
         print(f"Take saved in {folder}\nAnalyze it with: groove analyze {folder.name}")
+    elif args.cmd == "click":
+        from .audio import play_click
+        play_click(meter.beat_bpm(args.bpm, args.bpm_note), meter, args.minutes)
     elif args.cmd == "calibrate":
         from .audio import calibrate
         calibrate()
+    elif args.cmd == "learn-kit":
+        from . import kit
+        try:
+            drums = kit.parse_drums(args.drums) if args.drums else (kit.DRUMS if args.file else _ask_drums())
+            if args.file:
+                profile = kit.learn_from_file(str(Path(args.file).expanduser()), drums)
+            else:
+                profile = kit.learn_by_recording(drums)
+        except ValueError as e:
+            sys.exit(str(e))
+        problems = kit.check(profile)
+        path = kit.save(profile, args.name)
+        print(f"Learned kit profile '{args.name}' ({', '.join(profile['drums'])}). Saved to {path}")
+        if problems:
+            print("\nThis profile may not work well:\n" + "\n".join(f"  - {p}" for p in problems)
+                  + "\nTry learning it again (it replaces this one).")
+        print(f"Use it with: groove analyze <take> --kit {args.name}"
+              + (" (used automatically, since it's called 'default')" if args.name == "default" else ""))
     elif args.cmd == "synth":
         from .synth import synth
         folder = TAKES / args.name
@@ -104,7 +154,8 @@ def run_analyze(args, meter) -> int:
     from .transcribe import transcribe
 
     out = _take_folder(args.take)
-    audio = out / RECORDING
+    is_midi = (out / RECORDING_MIDI).exists()
+    audio = out / (RECORDING_MIDI if is_midi else RECORDING)
 
     from .meter import FOUR_FOUR, Meter
 
@@ -115,22 +166,37 @@ def run_analyze(args, meter) -> int:
         click = {"bpm": meta["bpm"], "origin": meta["origin"]}
         meter = Meter.parse(meta.get("time") or f"{meta.get('beats_per_bar', 4)}/4")
         print(f"Using click grid from {sidecar.name}: {meter.name} at {meta['bpm']:g} bpm")
-    elif meter is None:
+    prev_file = out / "analysis.json"
+    prev = json.loads(prev_file.read_text()) if prev_file.exists() else {}
+    if not click and meter is None:
         # Re-analyzing: keep the time signature the take was analyzed in before.
-        prev = out / "analysis.json"
-        ts = json.loads(prev.read_text()).get("time_signature") if prev.exists() else None
-        meter = Meter.parse(ts) if ts else FOUR_FOUR
+        meter = Meter.parse(prev["time_signature"]) if prev.get("time_signature") else FOUR_FOUR
     bpm = meter.beat_bpm(args.bpm, args.bpm_note) if args.bpm else None
     if bpm and args.bpm_note not in ("beat", None) and not click:
         print(f"Tempo: {args.bpm:g} {args.bpm_note} notes = {bpm:.1f} bpm in {meter.beat_note}s")
+    if not bpm and not click and prev.get("bpm_hint") and prev.get("time_signature") == meter.name:
+        bpm = prev["bpm_hint"]  # re-analyzing: keep the tempo given last time
+        print(f"Using the tempo given last time: {bpm:.1f} bpm in {meter.beat_note}s")
 
     # Drop anything in the count-in (minus a beat of slack for early hits).
     start = max(0.0, click["origin"] - 60.0 / click["bpm"] / 2) if click else 0.0
-    tr = transcribe(str(audio), mode=args.mode, start=start)
+    if is_midi:
+        kit_name = None
+        tr = _midi_transcription(audio, start)
+        print("Reading drums directly from your e-kit's MIDI (exact pads and timing)")
+    else:
+        kit_name, profile = _pick_kit(args.kit or prev.get("kit"), args.mode)
+        tr = transcribe(str(audio), mode=args.mode, start=start, kit=profile)
     print(f"Detected {len(tr.hits)} hits ({len({h.time for h in tr.hits})} onsets)")
+    for w in tr.warnings:
+        print(f"Warning: {w}")
     (out / "hits.json").write_text(json.dumps(tr.to_dict(), indent=1))
 
     result = analyze(tr, bpm=bpm, meter=meter, click=click)
+    result["kit"] = kit_name
+    result["source"] = "midi" if is_midi else "audio"
+    result["audio_warnings"] = tr.warnings
+    result["bpm_hint"] = bpm  # what was given (in beats), so a re-analysis can reuse it
     (out / "analysis.json").write_text(json.dumps(result, indent=1))
     bpm = result["grid_bpm"]  # in beats (dotted quarters in 6/8)
     hits_to_midi(tr.hits, bpm, str(out / "transcription.mid"), meter)
@@ -181,6 +247,39 @@ def run_analyze(args, meter) -> int:
     return 0
 
 
+def _ask_drums() -> list[str]:
+    """Ask which drums the kit has (kick, snare and hi-hat are always taught)."""
+    drums = ["kick", "snare", "hihat"]
+    n = input("How many toms does your kit have, including the floor tom? (0-3, Enter for 0): ").strip()
+    toms = {"1": ["tom_high"], "2": ["tom_high", "tom_floor"], "3": ["tom_high", "tom_mid", "tom_floor"]}
+    drums += toms.get(n, [])
+    for cym in ("crash", "ride"):
+        if input(f"Do you have a {cym} cymbal? (y/N): ").strip().lower().startswith("y"):
+            drums.append(cym)
+    print("You'll play 4 hits on each: " + ", ".join(d.replace("_", " ") for d in drums))
+    return drums
+
+
+def _pick_kit(name: str | None, mode: str) -> tuple[str | None, dict | None]:
+    """The kit profile to label drums with, or (None, None) for the built-in rules."""
+    from . import kit
+
+    if mode != "drums":
+        return None, None
+    if not name and "default" in kit.names():
+        name = "default"
+    if not name:
+        print("Telling drums apart with built-in rules (rough). For better kick/snare/hi-hat labels, "
+              "teach it your kit once: groove learn-kit")
+        return None, None
+    try:
+        profile = kit.load(name)
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+    print(f"Telling drums apart with kit profile '{name}' (learned {profile['learned']} from {profile['source']})")
+    return name, profile
+
+
 def _take_folder(take: str) -> Path:
     """Resolve a take name, take folder, or audio file to its folder in takes/.
 
@@ -195,17 +294,47 @@ def _take_folder(take: str) -> Path:
     if (TAKES / take).is_dir():
         return TAKES / take
     if p.is_file():
-        if p.name == RECORDING:
+        if p.name in (RECORDING, RECORDING_MIDI):
             return p.parent
         folder = TAKES / p.stem.replace(" ", "-")
         folder.mkdir(parents=True, exist_ok=True)
-        _import_audio(p, folder / RECORDING)
+        if p.suffix.lower() in (".mid", ".midi"):  # e.g. a take exported from GarageBand
+            dst = folder / RECORDING_MIDI
+            shutil.copy2(p, dst)
+        else:
+            dst = folder / RECORDING
+            _import_audio(p, dst)
         if Path(str(p) + ".json").exists():
-            shutil.copy2(str(p) + ".json", folder / (RECORDING + ".json"))
+            shutil.copy2(str(p) + ".json", Path(str(dst) + ".json"))
         print(f"Imported {p.name} into {folder}")
         return folder
     names = sorted(d.name for d in TAKES.glob("*/") if d.is_dir()) if TAKES.exists() else []
     sys.exit(f"No take called '{take}'." + (f" Takes: {', '.join(names)}" if names else ""))
+
+
+def _midi_transcription(path: Path, start: float):
+    """Hits straight from an e-kit MIDI take, shaped like an audio transcription."""
+    import librosa
+    import numpy as np
+
+    from .midiin import hits_from_midi
+    from .transcribe import HOP, SR, Transcription
+
+    hits, unknown = hits_from_midi(str(path))
+    hits = [h for h in hits if h.time >= start]
+    warnings = []
+    if unknown:
+        notes = ", ".join(f"note {n} ({c}x)" for n, c in sorted(unknown.items()))
+        warnings.append(f"Some hits came from pads the tool doesn't recognize ({notes}), so they were left out. "
+                        "Your module may use a custom pad map.")
+    duration = max((h.time for h in hits), default=0) + 1
+    # Tempo guess from the hits themselves, for takes with no click info.
+    env = np.zeros(int(duration * SR / HOP) + 1)
+    for h in hits:
+        env[int(h.time * SR / HOP)] += h.velocity / 127
+    env = np.convolve(env, np.hanning(9), "same")
+    tempo = float(np.atleast_1d(librosa.feature.tempo(onset_envelope=env, sr=SR, hop_length=HOP))[0]) if hits else 120.0
+    return Transcription(hits, tempo, duration, "drums", warnings)
 
 
 def _import_audio(src: Path, dst: Path) -> None:

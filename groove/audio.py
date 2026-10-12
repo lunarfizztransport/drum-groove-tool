@@ -38,6 +38,21 @@ def click_track(bpm: float, beats: int, meter: Meter = FOUR_FOUR, tail: float = 
     return y
 
 
+def play_click(bpm: float, meter: Meter = FOUR_FOUR, minutes: float = 5) -> None:
+    """Play a metronome only (no recording). Ctrl+C stops it."""
+    import sounddevice as sd
+
+    beats = max(meter.beats, int(minutes * bpm) // meter.beats * meter.beats)
+    unit = "" if meter.den == 4 else f" ({meter.beat_note}s)"
+    print(f"Click: {meter.name} at {bpm:g} bpm{unit}, accent on beat 1. Ctrl+C to stop.")
+    try:
+        sd.play(click_track(bpm, beats, meter, tail=0.2), SR)
+        sd.wait()
+    except KeyboardInterrupt:
+        sd.stop()
+        print("\nStopped.")
+
+
 def load_latency() -> float:
     try:
         return json.loads(CONFIG.read_text())["latency_s"]
