@@ -114,8 +114,9 @@ def _template(spectra: np.ndarray) -> list[float]:
     return (t / t.sum()).tolist()
 
 
-def learn_from_file(path: str, drums: list[str] = DRUMS) -> dict:
-    """A recording of 4 hits on each drum in `drums`, in that order, with a pause between drums."""
+def learn_from_file(path: str, drums: list[str] = DRUMS, clips: dict | None = None) -> dict:
+    """A recording of 4 hits on each drum in `drums`, in that order, with a pause between drums.
+    If `clips` is given, it's filled with each drum's slice of the audio (for the kit page)."""
     y, sr = librosa.load(path, sr=SR, mono=True)
     S, frames, strength = _onsets(y, sr)
     order = ", wait, ".join(f"4 {SPOKEN.get(d, d).lower()}" for d in drums)
@@ -133,11 +134,16 @@ def learn_from_file(path: str, drums: list[str] = DRUMS) -> dict:
         raise ValueError(f"Couldn't find {len(drums)} separate groups of hits (heard groups of {sizes}). "
                          f"Play {order}, waiting about 3 seconds between drums.")
     spectra = onset_spectra(S, frames, sr)
+    if clips is not None:
+        for d, g in zip(drums, groups):
+            t0, t1 = max(0.0, times[g[0]] - 0.3), min(len(y) / sr, times[g[-1]] + 0.9)
+            clips[d] = y[int(t0 * sr) : int(t1 * sr)]
     return _profile({d: spectra[_strongest(g, strength)] for d, g in zip(drums, groups)}, source=Path(path).name)
 
 
-def learn_by_recording(drums: list[str] = DRUMS, seconds: float = 5.0) -> dict:
-    """Guided: record each drum separately through the computer's mic."""
+def learn_by_recording(drums: list[str] = DRUMS, seconds: float = 5.0, clips: dict | None = None) -> dict:
+    """Guided: record each drum separately through the computer's mic.
+    If `clips` is given, it's filled with each drum's recording (for the kit page)."""
     import sounddevice as sd
 
     spectra = {}
@@ -154,6 +160,8 @@ def learn_by_recording(drums: list[str] = DRUMS, seconds: float = 5.0) -> dict:
                 print(f"  (Ignored {extra} echo/ringing blip{'s' if extra > 1 else ''} after your hits.)")
             if len(frames) >= 2:
                 spectra[d] = onset_spectra(S, frames)
+                if clips is not None:
+                    clips[d] = audio[:, 0].copy()
                 print(f"  Got {len(frames)} {d} hits.")
                 break
             print(f"  Only heard {len(frames)}. Play a bit louder or closer to the mic, and try again.")

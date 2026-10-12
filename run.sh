@@ -4,9 +4,9 @@
 cd "$(dirname "$0")"
 G() { .venv/bin/python -m groove "$@"; }
 
-if [[ ! -d takes/demo ]]; then
-  echo "\n=== Demo: a fake drum recording (no mic needed) ==="
-  G synth demo --rush 4 --snare-late 15 && G analyze demo --no-coach --no-open
+if [[ ! -d takes/example ]]; then
+  echo "\n=== Example: a fake drum recording (no mic needed) ==="
+  G synth example --rush 4 --snare-late 15 && G analyze example --no-coach --no-open
 fi
 
 echo "\nHow do you want to do this take?"
@@ -50,7 +50,14 @@ else
   fi
   read "bpm?$tempo_q (Enter for $([[ "$ts" == */8 ]] && echo 60 || echo 80)): "
   bpm=${bpm:-$([[ "$ts" == */8 ]] && echo 60 || echo 80)}
-  name="$(date +%Y-%m-%d_%H%M)"
+  read "name?Name this take (Enter for today's date and time): "
+  name=${name:-$(date +%Y-%m-%d_%H%M)}
+  name=${name// /-}
+  if [[ -d "takes/$name" ]]; then
+    read "ans?A take called '$name' already exists. Replace it? (y/N): "
+    [[ "$ans" == [yY]* ]] || exit 1
+    rm -rf "takes/$name"
+  fi
   echo "\n=== Record ($name) ==="
   if [[ "$mode" == 3 ]]; then
     echo "The click can play out loud (no mic is used). 1-bar count-in, then play 8 bars."
@@ -67,7 +74,7 @@ fi
 
 echo "\n=== Analyze ==="
 if [[ -z "$ANTHROPIC_API_KEY" ]]; then
-  read "key?Paste your Anthropic API key for coaching (or press Enter to skip): "
+  read -s "key?Paste your Anthropic API key for coaching, hidden (or press Enter to skip): "; echo
   [[ -n "$key" ]] && export ANTHROPIC_API_KEY=$key
 fi
 if [[ -n "$ANTHROPIC_API_KEY" ]]; then

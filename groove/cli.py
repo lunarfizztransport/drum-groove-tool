@@ -52,6 +52,7 @@ def main(argv=None) -> int:
     lk.add_argument("file", nargs="?", help="a recording of 4 kicks, pause, 4 snares, pause, 4 hi-hats "
                                             "(e.g. from your phone). Leave out to record with the computer mic")
     lk.add_argument("--name", default="default", help="profile name, e.g. phone or laptop (default: default)")
+    lk.add_argument("--no-open", action="store_true", help="don't open the kit page in a browser")
     lk.add_argument("--drums", help="drums in the order you played them, comma-separated, from: kick, snare, "
                                     "hihat, tom_high, tom_mid, tom_floor, crash, ride (default for a file: "
                                     "kick,snare,hihat; with the mic you'll be asked)")
@@ -120,10 +121,11 @@ def main(argv=None) -> int:
         from . import kit
         try:
             drums = kit.parse_drums(args.drums) if args.drums else (kit.DRUMS if args.file else _ask_drums())
+            clips: dict = {}
             if args.file:
-                profile = kit.learn_from_file(str(Path(args.file).expanduser()), drums)
+                profile = kit.learn_from_file(str(Path(args.file).expanduser()), drums, clips)
             else:
-                profile = kit.learn_by_recording(drums)
+                profile = kit.learn_by_recording(drums, clips=clips)
         except ValueError as e:
             sys.exit(str(e))
         problems = kit.check(profile)
@@ -132,6 +134,12 @@ def main(argv=None) -> int:
         if problems:
             print("\nThis profile may not work well:\n" + "\n".join(f"  - {p}" for p in problems)
                   + "\nTry learning it again (it replaces this one).")
+        from .report import build_kit_report
+        page = build_kit_report(TAKES / f"kit-{args.name}", args.name, profile, clips, problems)
+        print(f"Kit page with your teaching hits: {page}")
+        if not args.no_open and sys.platform == "darwin":
+            import subprocess
+            subprocess.run(["open", str(page)], check=False)
         print(f"Use it with: groove analyze <take> --kit {args.name}"
               + (" (used automatically, since it's called 'default')" if args.name == "default" else ""))
     elif args.cmd == "synth":

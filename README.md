@@ -234,13 +234,59 @@ Anthropic's paid API at roughly **10–25 cents per analyzed take**. To set it u
 
 1. Sign in at [console.anthropic.com](https://console.anthropic.com) (separate from a Claude.ai subscription).
 2. Add prepaid credit under **Settings → Billing**. $5 covers a lot of takes, and nothing renews automatically.
-3. Create a key under **Settings → API Keys** and paste it when `run.sh` asks, or save it once:
+3. Create a key under **Settings → API Keys**, then set it up so it stays hidden.
+   See [Keeping your API key private](#keeping-your-api-key-private) below.
+
+Use `--no-coach` (or press Enter at the key prompt) to skip coaching entirely.
+
+## Keeping your API key private
+
+Your API key works like a password linked to your billing: anyone who has it
+can run requests charged to your account. Bots scan GitHub and public websites
+for keys, so a key that's ever shown publicly should be treated as stolen.
+**Never** type it into a visible command, show it in a screenshot or screen
+recording, paste it into a chat, or commit it to git.
+
+**Recommended: store it in macOS Keychain (one-time setup).** The key is
+saved in your Mac's password store and loaded automatically in every new
+terminal, without ever appearing on screen or in a file.
+
+1. Run this line **on its own** (the key does *not* go in the command):
    ```bash
-   echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc
+   security add-generic-password -a "$USER" -s anthropic-api-key -w
+   ```
+   At `password data for new item:` paste your key and press Enter. Nothing
+   appears while you paste; that's on purpose. Paste it again at `retype…`
+   and press Enter.
+2. Then run this line, which tells new terminals to load the key from Keychain:
+   ```bash
+   echo 'export ANTHROPIC_API_KEY=$(security find-generic-password -a "$USER" -s anthropic-api-key -w 2>/dev/null)' >> ~/.zshrc
+   ```
+3. Open a **new** terminal window and check it worked. This prints only the
+   first few characters:
+   ```bash
+   echo ${ANTHROPIC_API_KEY:0:10}...
    ```
 
-Keep the key private and never commit it. Use `--no-coach` (or press Enter at
-the key prompt) to skip coaching entirely.
+Run steps 1 and 2 separately: if you paste both at once, the second line gets
+typed in as your key. To replace the stored key later, run step 1 again with
+`-U` added at the end.
+
+**Just for one session:** paste the key into a hidden prompt (lasts until you
+close that terminal window, and isn't saved in your shell history):
+```bash
+read -s "ANTHROPIC_API_KEY?Paste your API key (hidden): " && export ANTHROPIC_API_KEY && echo " ✓ key set"
+```
+`run.sh` also asks for the key with hidden input if it isn't already set.
+
+**Before screen recording or screenshots:** set the key up first (Keychain
+makes this automatic), run `clear`, and run `PROMPT='%# '` to hide your
+username in the terminal prompt.
+
+**If a key is ever exposed:** go to console.anthropic.com → Settings → API
+Keys, **delete** that key, and create a new one. The old key stops working
+immediately, so any copies of it become useless. Then update Keychain with
+step 1 plus `-U`.
 
 ## Electronic kits (best results)
 

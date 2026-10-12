@@ -345,6 +345,83 @@ def _midi_link(folder: Path, rel: str, text: str) -> str:
     return f"<a class='midi' href='{escape(rel)}' download>⬇ {escape(text)}</a>"
 
 
+# --- kit profile page -----------------------------------------------------------
+
+DRUM_NAME = {"kick": "Kick", "snare": "Snare", "hihat": "Hi-hat (closed)", "tom_high": "High tom", "tom_mid": "Mid tom",
+             "tom_floor": "Floor tom", "crash": "Crash", "ride": "Ride"}
+
+
+def build_kit_report(folder: Path, name: str, profile: dict, clips: dict, problems: list[str]) -> Path:
+    """A page showing what a kit profile learned: each drum's teaching hits and learned sound."""
+    import numpy as np
+
+    from .render import save_web_audio
+
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "profile.json").write_text(json.dumps(profile, indent=1))
+    edges = np.array(profile["band_edges_hz"])
+    centers = np.sqrt(edges[:-1] * edges[1:])
+    cards = []
+    for d in profile["drums"]:
+        t = np.array(profile["templates"][d])
+        bright = float(np.exp((t * np.log(centers)).sum() / t.sum()))
+        audio = ""
+        if d in clips and len(clips[d]):
+            f = save_web_audio(clips[d], folder / d)
+            audio = f"<audio controls preload='none' src='{escape(f.name)}'></audio>"
+        cards.append(f"<section class='card'><h3>{escape(DRUM_NAME.get(d, d))}</h3>{audio}"
+                     f"<p class='muted'>Learned from {profile['hits'][d]} hits \u00b7 centre of its sound \u2248 "
+                     f"{_hz(bright)}</p>{_spectrum_chart(t, edges, d)}</section>")
+    if problems:
+        status = ("<section class='card warn'><p><strong>This profile may not work well:</strong></p><ul>"
+                  + "".join(f"<li>{escape(p)}</li>" for p in problems)
+                  + "</ul><p class='muted'>Run <code>learn-kit</code> again to replace it.</p></section>")
+    else:
+        status = ("<section class='card note'><p><strong>\u2713 Looks good.</strong> The drums sound distinct, from the "
+                  "deep kick to the bright hi-hat, so the tool can tell them apart.</p></section>")
+    body = [
+        f"<header><p class='eyebrow'>Kit profile</p><h1>{escape(name)}</h1>"
+        f"<p class='sub'>Learned {escape(profile['learned'])} from {escape(profile['source'])} \u00b7 "
+        f"{', '.join(escape(DRUM_NAME.get(d, d)) for d in profile['drums'])}</p></header>",
+        status,
+        "<section class='card lead'><h2>How the tool uses this</h2><p>You played a few hits on each drum. The tool "
+        "measured which frequencies each one adds, from the low thump of the kick to the high sizzle of the hi-hat. "
+        "When it analyzes a take, it explains every hit as a mix of these learned sounds, so a kick and hi-hat played "
+        "together come out as both. Because it learns your drums on your mic in your room, it copes with sound that "
+        "a fixed rule would get wrong.</p></section>",
+        "<div class='two'>" + "".join(cards) + "</div>",
+        "<footer>Made with drum-groove-tool. The learned sounds are saved in profile.json.</footer>",
+    ]
+    out = folder / "kit.html"
+    out.write_text(_HTML.replace("{title}", escape(f"{name} kit profile")).replace("{body}", "\n".join(body)))
+    return out
+
+
+def _hz(f: float) -> str:
+    return f"{f / 1000:.1f} kHz" if f >= 1000 else f"{f:.0f} Hz"
+
+
+def _spectrum_chart(t, edges, drum: str) -> str:
+    """Bars: share of the drum's added energy in each frequency band (log-spaced)."""
+    w, h, ml, mb, mt = 560, 150, 8, 26, 10
+    n = len(t)
+    band = (w - 2 * ml) / n
+    top = max(t) * 1.1 or 1
+    g = [f"<line class='zero' x1='{ml}' x2='{w - ml}' y1='{h - mb}' y2='{h - mb}'/>"]
+    for i, v in enumerate(t):
+        x = ml + i * band
+        y1 = mt + (1 - v / top) * (h - mt - mb)
+        if v > 0:
+            g.append(f"<path class='spec' d='{_bar_path(x + 1, band - 2, h - mb, y1, 2)}'/>")
+        g.append(f"<rect class='hit-target' x='{x:.1f}' y='{mt}' width='{band:.1f}' height='{h - mt - mb}' "
+                 f"data-tip='{_hz(edges[i])}\u2013{_hz(edges[i + 1])}: {100 * v:.0f}% of the sound'/>")
+    for f in (50, 200, 1000, 5000, 15000):
+        idx = max(0, min(n - 1, int(sum(1 for e in edges[1:] if e <= f))))
+        g.append(f"<text class='axis' x='{ml + (idx + 0.5) * band:.1f}' y='{h - 8}' text-anchor='middle'>{_hz(f)}</text>")
+    return (f"<svg class='chart' viewBox='0 0 {w} {h}' role='img' aria-label='Learned sound of the {escape(drum)}'>"
+            + "".join(g) + "</svg>")
+
+
 # --- charts (inline SVG) -------------------------------------------------------
 
 W, H = 560, 220
@@ -529,9 +606,10 @@ svg.chart { width: 100%; height: auto; display: block; margin-top: 8px; overflow
 path.early { fill: var(--early); } path.late { fill: var(--late); }
 .dot { stroke: var(--surface); stroke-width: 2; } .dot.early { fill: var(--early); } .dot.late { fill: var(--late); } .dot.even { fill: var(--even); }
 .whisker { stroke: var(--axis); stroke-width: 3; stroke-linecap: round; }
-.player audio, .idea-audio audio { width: 100%; margin: 6px 0 2px; }
+.player audio, .idea-audio audio, .card > audio { width: 100%; margin: 6px 0 2px; }
 .idea-audio { margin: 10px 0 4px; font-size: 13px; }
 tr.seek { cursor: pointer; } tr.seek:hover td { background: var(--cell); }
+path.spec { fill: var(--line); }
 .pt.current { stroke: var(--ink); stroke-width: 3; }
 path.early.current, path.late.current { stroke: var(--ink); stroke-width: 2; }
 text.axis.current { fill: var(--ink); font-weight: 700; }
