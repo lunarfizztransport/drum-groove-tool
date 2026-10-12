@@ -129,7 +129,8 @@ def analyze(
         m = bars_idx == b
         if m.any():
             result["per_bar"].append(
-                {"bar": b + 1, "events": int(m.sum()), "mean_offset_ms_vs_grid": _r(dev[m].mean()), "std_ms": _r(local[m].std())}
+                {"bar": b + 1, "start_s": round(float(origin + b * bar), 3), "events": int(m.sum()),
+                 "mean_offset_ms_vs_grid": _r(dev[m].mean()), "std_ms": _r(local[m].std())}
             )
 
     result["patterns"] = _patterns(by_time, times, bars_idx, slot_in_bar, spb, n_bars)

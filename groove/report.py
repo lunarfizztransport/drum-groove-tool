@@ -20,9 +20,41 @@ def build_report(folder: str | Path) -> Path:
     coaching_file = folder / "coaching.json"
     c = json.loads(coaching_file.read_text()) if coaching_file.exists() else None
     take = _take_title(folder.name)
+    _prepare_audio(folder, a, c)
     out = folder / "report.html"
     out.write_text(_page(take, a, c, folder))
     return out
+
+
+def _prepare_audio(folder: Path, a: dict, c: dict | None) -> None:
+    """A small web copy of the recording, and audio for each idea (browsers can't play MIDI)."""
+    from .meter import Meter
+    from .render import compress, render_bars, save_web_audio
+
+    wav, m4a = folder / "recording.wav", folder / "recording.m4a"
+    if wav.exists() and (not m4a.exists() or m4a.stat().st_mtime < wav.stat().st_mtime):
+        compress(wav, m4a)
+    if not c:
+        return
+    meter = Meter.parse(a.get("time_signature", "4/4"))
+    s8 = (a["swing"].get("eighth_swing_pct") or 50) / 100
+    s16 = (a["swing"].get("sixteenth_swing_pct") or 50) / 100
+    groove = {("hihat_closed" if k == "hihat" else k): v for k, v in a["patterns"]["main_groove"].items() if k != "hit"}
+    for kind, key in (("variation", "variations"), ("fill", "fills")):
+        for i, p in enumerate(c.get(key, []), 1):
+            out = folder / "patterns" / f"{kind}{i}_in_context.m4a"
+            if out.exists() or out.with_suffix(".wav").exists():
+                continue
+            out.parent.mkdir(exist_ok=True)
+            bars = [groove] * (3 if kind == "fill" else 2) + _pattern_bars(p, meter.steps_per_bar) + [groove]
+            save_web_audio(render_bars(bars, a["grid_bpm"], meter, s8, s16), out)
+
+
+def _audio_file(folder: Path, stem: str) -> str | None:
+    for ext in (".m4a", ".wav"):
+        if (folder / (stem + ext)).exists():
+            return stem + ext
+    return None
 
 
 def _take_title(name: str) -> str:
@@ -85,6 +117,14 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
         f" · {kit_note}</p></header>",
         f"<section class='tiles'>{''.join(tiles)}</section>",
     ]
+    take_audio = _audio_file(folder, "recording")
+    if take_audio:
+        bars = [{"bar": b["bar"], "start": b["start_s"]} for b in a["per_bar"] if "start_s" in b]
+        follow = ("As it plays, the current bar lights up in the charts below. " if bars else "")
+        body.append(f"<section class='card player'><h2>Listen to this take</h2>"
+                    f"<audio id='take' controls preload='metadata' src='{escape(take_audio)}'></audio>"
+                    f"<p class='muted'>{follow}Click a row in \u201cMoments to look at\u201d to hear that moment.</p>"
+                    f"<script id='bars' type='application/json'>{json.dumps(bars)}</script></section>")
 
     for w in a.get("audio_warnings", []):
         body.append(f"<section class='card warn'><p><strong>Recording problem:</strong> {escape(w)} "
@@ -100,7 +140,7 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
     body.append("<section class='card'><h2>Your groove</h2>"
                 f"<p class='muted'>The beat you played most often ({n_same} of {a['n_bars']} bars). "
                 "Darker = harder hit, lighter = ghost note.</p>"
-                f"{grid([groove])}{_midi_link(folder, 'transcription.mid', 'Hear your whole take')}</section>")
+                f"{grid([groove])}{_midi_link(folder, 'transcription.mid', 'Your take as MIDI (for GarageBand)')}</section>")
 
     charts = ["<section class='card'><h2>Tempo, bar by bar</h2>"]
     if tempo["bpm_by_bar"]:
@@ -123,7 +163,8 @@ def _page(take: str, a: dict, c: dict | None, folder: Path) -> str:
     worst = a["worst_events"][:6]
     if worst:
         rows = "".join(
-            f"<tr><td>{w['bar']}</td><td>{escape(w['count'])}</td><td>{escape(', '.join(INST_LABEL.get(i, i) for i in w['instruments']))}</td>"
+            f"<tr class='seek' data-time='{w['time_s']}' title='Click to hear this moment'>"
+            f"<td>{w['bar']}</td><td>{escape(w['count'])}</td><td>{escape(', '.join(INST_LABEL.get(i, i) for i in w['instruments']))}</td>"
             f"<td class='num'>{_ms(w['offset_ms'])}</td></tr>" for w in worst)
         body.append("<section class='card'><h2>Moments to look at</h2><p class='muted'>The hits furthest from where "
                     "they belonged. Clusters in one bar usually mean a fill got away from you.</p>"
@@ -172,8 +213,8 @@ def _coaching(c: dict, folder: Path, grid, spb: int) -> str:
         parts.append(f"<h3 class='subsection'>{title}</h3>")
         for i, p in enumerate(c[key], 1):
             bars = _pattern_bars(p, spb)
-            links = (_midi_link(folder, f"patterns/{kind}{i}_in_context.mid", "Hear it with your groove")
-                     + _midi_link(folder, f"patterns/{kind}{i}.mid", "Hear it alone"))
+            links = (_midi_link(folder, f"patterns/{kind}{i}_in_context.mid", "MIDI with your groove")
+                     + _midi_link(folder, f"patterns/{kind}{i}.mid", "MIDI alone"))
             mine = ""
             if p.get("make_it_yours"):
                 mine = ("<div class='mine'><strong>Make it yours</strong><ul>"
@@ -181,7 +222,7 @@ def _coaching(c: dict, folder: Path, grid, spb: int) -> str:
             parts.append(f"<section class='card'><h3>{escape(p['name'])} <span class='pill'>{escape(p['difficulty'])}</span></h3>"
                          f"<p>{_p(p['why_it_fits'])}</p>{grid(bars)}"
                          f"<p class='muted'><strong>How to practice:</strong> {_p(p['how_to_practice'])}</p>"
-                         f"{mine}<div class='links'>{links}</div></section>")
+                         f"{mine}{_idea_audio(folder, kind, i)}<div class='links'>{links}</div></section>")
     if c.get("your_turn"):
         parts.append("<h2 class='section'>Your turn</h2>"
                      "<section class='card lead'><p class='muted'>No answers here. Set the click, pick one, and "
@@ -290,10 +331,18 @@ def _grid(bars: list[dict[str, str]], counts: list[str], slots: int) -> str:
     return f"<div class='scroll'><table class='grid'><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
 
 
+def _idea_audio(folder: Path, kind: str, i: int) -> str:
+    f = _audio_file(folder / "patterns", f"{kind}{i}_in_context")
+    if not f:
+        return ""
+    return (f"<div class='idea-audio'><span class='muted'>Listen with your groove (simple built-in drum sounds)</span>"
+            f"<audio controls preload='none' src='patterns/{escape(f)}'></audio></div>")
+
+
 def _midi_link(folder: Path, rel: str, text: str) -> str:
     if not (folder / rel).exists():
         return ""
-    return f"<a class='midi' href='{escape(rel)}'>▶ {escape(text)}</a>"
+    return f"<a class='midi' href='{escape(rel)}' download>⬇ {escape(text)}</a>"
 
 
 # --- charts (inline SVG) -------------------------------------------------------
@@ -318,9 +367,9 @@ def _line_chart(points: list[dict], target: float | None) -> str:
     path = " ".join(f"{'M' if i == 0 else 'L'}{sx(x):.1f},{sy(y):.1f}" for i, (x, y) in enumerate(zip(xs, ys)))
     g.append(f"<path class='line' d='{path}'/>")
     for x, y in zip(xs, ys):
-        g.append(f"<circle class='pt' cx='{sx(x):.1f}' cy='{sy(y):.1f}' r='4.5'/>"
+        g.append(f"<circle class='pt' data-bar='{x}' cx='{sx(x):.1f}' cy='{sy(y):.1f}' r='4.5'/>"
                  f"<circle class='hit-target' cx='{sx(x):.1f}' cy='{sy(y):.1f}' r='14' data-tip='Bar {x}: {y:.1f} bpm'/>")
-        g.append(f"<text class='axis' x='{sx(x):.1f}' y='{H - 10}' text-anchor='middle'>{x}</text>")
+        g.append(f"<text class='axis' data-bar='{x}' x='{sx(x):.1f}' y='{H - 10}' text-anchor='middle'>{x}</text>")
     return _svg(g, "Tempo by bar line chart", "bar")
 
 
@@ -339,10 +388,10 @@ def _bars_chart(per_bar: list[dict]) -> str:
         cx = ML + band * (i + 0.5)
         y0, y1 = sy(0), sy(v)
         cls = "late" if v > 0 else "early"
-        g.append(f"<path class='{cls}' d='{_bar_path(cx - bw / 2, bw, y0, y1)}'/>")
+        g.append(f"<path class='{cls}' data-bar='{b['bar']}' d='{_bar_path(cx - bw / 2, bw, y0, y1)}'/>")
         g.append(f"<rect class='hit-target' x='{cx - band / 2:.1f}' y='{MT}' width='{band:.1f}' height='{H - MT - MB}' "
                  f"data-tip='Bar {b['bar']}: {_ms(v)} on average · spread {b['std_ms']:.0f} ms · {b['events']} hits'/>")
-        g.append(f"<text class='axis' x='{cx:.1f}' y='{H - 10}' text-anchor='middle'>{b['bar']}</text>")
+        g.append(f"<text class='axis' data-bar='{b['bar']}' x='{cx:.1f}' y='{H - 10}' text-anchor='middle'>{b['bar']}</text>")
     return _svg(g, "Average timing offset per bar", "bar")
 
 
@@ -480,6 +529,12 @@ svg.chart { width: 100%; height: auto; display: block; margin-top: 8px; overflow
 path.early { fill: var(--early); } path.late { fill: var(--late); }
 .dot { stroke: var(--surface); stroke-width: 2; } .dot.early { fill: var(--early); } .dot.late { fill: var(--late); } .dot.even { fill: var(--even); }
 .whisker { stroke: var(--axis); stroke-width: 3; stroke-linecap: round; }
+.player audio, .idea-audio audio { width: 100%; margin: 6px 0 2px; }
+.idea-audio { margin: 10px 0 4px; font-size: 13px; }
+tr.seek { cursor: pointer; } tr.seek:hover td { background: var(--cell); }
+.pt.current { stroke: var(--ink); stroke-width: 3; }
+path.early.current, path.late.current { stroke: var(--ink); stroke-width: 2; }
+text.axis.current { fill: var(--ink); font-weight: 700; }
 .hit-target { fill: transparent; cursor: default; }
 .hit-target:hover { fill: var(--ink); fill-opacity: .04; }
 #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page); font-size: 13px; padding: 6px 10px; border-radius: 6px; max-width: 280px; z-index: 10; }
@@ -511,6 +566,28 @@ document.addEventListener('mousemove', e => {
   const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
   tip.style.left = x + 'px'; tip.style.top = (e.clientY + 14) + 'px';
 });
+// Light up the bar that's playing, and jump to a moment when its row is clicked.
+const audio = document.getElementById('take');
+const barsEl = document.getElementById('bars');
+const bars = barsEl ? JSON.parse(barsEl.textContent) : [];
+if (audio && bars.length) {
+  const barLen = bars.length > 1 ? bars[1].start - bars[0].start : 2;
+  let current = null;
+  audio.addEventListener('timeupdate', () => {
+    const t = audio.currentTime;
+    let b = null;
+    for (const x of bars) if (x.start <= t && t < x.start + barLen * 1.05) b = x.bar;
+    if (b === current) return;
+    document.querySelectorAll('[data-bar].current').forEach(el => el.classList.remove('current'));
+    if (b !== null) document.querySelectorAll(`[data-bar="${b}"]`).forEach(el => el.classList.add('current'));
+    current = b;
+  });
+}
+document.querySelectorAll('tr.seek').forEach(row => row.addEventListener('click', () => {
+  if (!audio) return;
+  audio.currentTime = Math.max(0, Number(row.dataset.time) - 1.5);
+  audio.play();
+}));
 </script>
 </body></html>
 """

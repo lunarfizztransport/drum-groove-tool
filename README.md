@@ -96,6 +96,7 @@ The main file is **`report.html`**, which opens in your browser automatically
 after each take. Double-click it to open it again later. It shows:
 
 - **Headline numbers:** timing spread, % of hits on target, tempo start → end, distance from the click, swing feel
+- **Listen to this take:** an audio player for your recording. The current bar lights up in the charts as it plays, and clicking a "moment to look at" jumps to it
 - **Your groove** drawn as a drum grid
 - **Charts:** tempo bar by bar, early/late bar by bar, and timing by drum and by count (hover for details)
 - **Moments to look at:** the hits furthest off
@@ -112,7 +113,9 @@ fill, then back to your groove, so you hear how it fits in a song.
 |---|---|
 | `report.html` | **Start here.** Everything, readable |
 | `recording.wav` | Your recording |
-| `patterns/*.mid` | Variation and fill ideas to listen to |
+| `recording.m4a` | A small copy of it for the report's audio player |
+| `patterns/*_in_context.m4a` | Each idea as audio, played with simple built-in drum sounds |
+| `patterns/*.mid` | Each idea as MIDI, for GarageBand or a DAW |
 | `transcription.mid` | Your take as the tool heard it |
 | `coaching.md` | Claude's feedback as plain text |
 | `analysis.json`, `hits.json`, `coaching.json` | Raw data for the program. You don't need to open these |
@@ -338,6 +341,7 @@ groove/
   analyze.py      hits → timing metrics, swing, groove pattern
   coach.py        metrics → Claude feedback + patterns
   report.py       everything → report.html
+  render.py       patterns → audio, web-friendly audio copies
   research.py     verified research sources and notes
   kit.py          learned kit profiles for telling drums apart
   meter.py        time signatures: beats, grid, counting
