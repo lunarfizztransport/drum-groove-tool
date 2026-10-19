@@ -1,0 +1,1371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drum Groove Tool</title>
+<link rel="icon" href="data:,">
+<meta name="description" content="Record yourself playing drums, see exactly how your timing sits, and get coaching plus new grooves and fills in your style. Runs in your browser.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --early: #2a78d6; --late: #e34948; --even: #898781; --line: #2a78d6; --ok: #2f8a4c;
+  --hit: #3d3c39; --hit-accent: #0b0b0b; --hit-ghost: #b9b7ae; --cell: #efeee9; --beatcell: #e4e3dc;
+  --accent-bg: #eef4fc; --btn: #0b0b0b; --btn-ink: #ffffff; --rec: #d63a39;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --early: #3987e5; --late: #e66767; --line: #3987e5; --ok: #4fb46d;
+  --hit: #d6d5cd; --hit-accent: #ffffff; --hit-ghost: #6b6a64; --cell: #242422; --beatcell: #2e2e2b;
+  --accent-bg: #16202c; --btn: #ffffff; --btn-ink: #0b0b0b; --rec: #e66767;
+}}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --early: #3987e5; --late: #e66767; --line: #3987e5; --ok: #4fb46d;
+  --hit: #d6d5cd; --hit-accent: #ffffff; --hit-ghost: #6b6a64; --cell: #242422; --beatcell: #2e2e2b;
+  --accent-bg: #16202c; --btn: #ffffff; --btn-ink: #0b0b0b; --rec: #e66767;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 28px 20px 60px; }
+header { margin-bottom: 18px; }
+.eyebrow { margin: 0; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+h1 { margin: 2px 0 4px; font-size: 30px; line-height: 1.15; }
+h2 { font-size: 18px; margin: 0 0 6px; }
+h2.section { font-size: 22px; margin: 36px 0 12px; }
+h3 { font-size: 16px; margin: 0 0 6px; }
+p { margin: 0 0 10px; } .sub, .muted { color: var(--ink2); }
+.muted { font-size: 14px; }
+a { color: var(--line); }
+
+/* app chrome */
+nav.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 18px; }
+nav.tabs button { font: inherit; font-size: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--ink2); border-radius: 99px; padding: 6px 14px; cursor: pointer; }
+nav.tabs button[aria-selected="true"] { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+.view[hidden] { display: none; }
+.btn { font: inherit; font-size: 15px; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 18px; cursor: pointer; background: var(--btn); color: var(--btn-ink); display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.rec { background: var(--rec); color: #fff; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); font-weight: 500; }
+.btn.small { font-size: 14px; padding: 6px 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 12px 14px; margin: 12px 0 16px; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink2); min-width: 0; }
+label.f.wide { grid-column: 1 / -1; }
+input, select, textarea { font: inherit; font-size: 15px; color: var(--ink); background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; }
+textarea { resize: vertical; min-height: 60px; }
+input[type=checkbox], input[type=radio] { width: auto; }
+label.check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink2); }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg button { font: inherit; font-size: 14px; border: 0; background: var(--surface); color: var(--ink2); padding: 8px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--accent-bg); color: var(--ink); font-weight: 600; }
+.recorder { text-align: center; padding: 28px 16px; }
+.recorder .big { font-size: 40px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.recorder .beats { display: flex; justify-content: center; gap: 8px; margin: 14px 0; }
+.recorder .beats span { width: 16px; height: 16px; border-radius: 50%; background: var(--cell); border: 1px solid var(--border); }
+.recorder .beats span.on { background: var(--ink); }
+.recorder .beats span.on.one { background: var(--rec); }
+.meter { height: 8px; background: var(--cell); border-radius: 99px; overflow: hidden; max-width: 320px; margin: 10px auto; }
+.meter div { height: 100%; width: 0; background: var(--ok); transition: width .08s linear; }
+.status { font-size: 14px; color: var(--ink2); margin-top: 8px; min-height: 1.4em; }
+.status.err { color: var(--late); }
+.progress { height: 4px; background: var(--cell); border-radius: 99px; overflow: hidden; margin: 10px 0; }
+.progress div { height: 100%; width: 0; background: var(--line); }
+.takes { display: grid; gap: 10px; }
+.take { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.take .t-main { min-width: 0; flex: 1 1 260px; }
+.take h3 { margin: 0; }
+.badge { display: inline-block; font-size: 12px; color: var(--ink2); border: 1px solid var(--border); border-radius: 99px; padding: 1px 9px; margin-left: 6px; vertical-align: 2px; }
+.empty { text-align: center; padding: 30px 16px; color: var(--ink2); }
+.steps { margin: 0; padding-left: 20px; } .steps li { margin-bottom: 6px; }
+.drumsteps { display: grid; gap: 8px; margin: 12px 0; }
+.drumstep { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+.drumstep.done { border-color: var(--ok); }
+.drumstep .ok { color: var(--ok); font-weight: 600; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+details.more summary { cursor: pointer; color: var(--ink2); font-size: 14px; }
+.keynote { font-size: 13px; color: var(--ink2); }
+code { font-size: 13px; background: var(--cell); padding: 1px 5px; border-radius: 4px; }
+
+/* report (same look as the Python tool's report.html) */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.tile { padding: 14px 16px; }
+.tlabel { color: var(--ink2); font-size: 13px; }
+.tvalue { font-size: 26px; font-weight: 650; line-height: 1.25; margin: 2px 0; }
+.tdetail { color: var(--muted); font-size: 13px; }
+.card { padding: 18px 20px; margin-bottom: 14px; }
+.card.lead { background: var(--accent-bg); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 14px; }
+.two > *, .card, .tile { min-width: 0; }
+.two > .card { margin-bottom: 0; } .two { margin-bottom: 14px; }
+@media (max-width: 440px) { main { padding: 20px 16px 40px; } .card { padding: 16px; } .tvalue { font-size: 22px; } h1 { font-size: 26px; } .recorder .big { font-size: 32px; } }
+.insight .evidence { color: var(--ink2); font-size: 14px; border-left: 3px solid var(--axis); padding-left: 10px; }
+.fix { margin-bottom: 0; }
+.pill { display: inline-block; font-size: 12px; font-weight: 500; color: var(--ink2); border: 1px solid var(--border); border-radius: 99px; padding: 1px 9px; margin-left: 6px; vertical-align: 2px; }
+ul { margin: 0; padding-left: 20px; } li { margin-bottom: 4px; }
+.scroll { overflow-x: auto; margin: 10px 0; }
+table { border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--grid); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.grid { border-collapse: separate; border-spacing: 2px; }
+.grid th, .grid td { border: 0; padding: 0; }
+.grid thead th { font-size: 11px; color: var(--muted); text-align: center; font-weight: 400; width: 22px; }
+.grid thead th.beat { color: var(--ink); font-weight: 650; }
+.grid th.inst { font-size: 13px; color: var(--ink2); font-weight: 500; padding-right: 10px; white-space: nowrap; }
+.grid td { width: 22px; height: 22px; min-width: 22px; background: var(--cell); border-radius: 4px; }
+.grid td.beat { background: var(--beatcell); }
+.grid .barstart { border-left: 2px solid var(--axis); }
+.grid td.hit { background: var(--hit); } .grid td.accent { background: var(--hit-accent); } .grid td.ghost { background: var(--hit-ghost); }
+.links { display: flex; flex-wrap: wrap; gap: 8px; }
+a.midi { display: inline-block; color: var(--ink); text-decoration: none; border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; font-size: 14px; background: var(--page); margin-top: 6px; }
+a.midi:hover { border-color: var(--ink2); }
+svg.chart { width: 100%; height: auto; display: block; margin-top: 8px; overflow: visible; }
+.gridline { stroke: var(--grid); stroke-width: 1; } .zero { stroke: var(--axis); stroke-width: 1.5; }
+.ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.reflabel, .axis { fill: var(--muted); font-size: 12px; } .rowlabel { fill: var(--ink2); font-size: 13px; }
+.val { fill: var(--ink); font-size: 13px; }
+.line { fill: none; stroke: var(--line); stroke-width: 2; stroke-linejoin: round; }
+.pt { fill: var(--line); stroke: var(--surface); stroke-width: 2; }
+path.early { fill: var(--early); } path.late { fill: var(--late); }
+.dot { stroke: var(--surface); stroke-width: 2; } .dot.early { fill: var(--early); } .dot.late { fill: var(--late); } .dot.even { fill: var(--even); }
+.whisker { stroke: var(--axis); stroke-width: 3; stroke-linecap: round; }
+.player audio, .idea-audio audio, .card audio { width: 100%; margin: 6px 0 2px; }
+.idea-audio { margin: 10px 0 4px; font-size: 13px; }
+tr.seek { cursor: pointer; } tr.seek:hover td { background: var(--cell); }
+path.spec { fill: var(--line); }
+.pt.current { stroke: var(--ink); stroke-width: 3; }
+path.early.current, path.late.current { stroke: var(--ink); stroke-width: 2; }
+text.axis.current { fill: var(--ink); font-weight: 700; }
+.hit-target { fill: transparent; cursor: default; }
+.hit-target:hover { fill: var(--ink); fill-opacity: .04; }
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page); font-size: 13px; padding: 6px 10px; border-radius: 6px; max-width: 280px; z-index: 10; }
+h3.subsection { font-size: 17px; margin: 22px 0 10px; color: var(--ink2); }
+.card.warn { border-left: 3px solid var(--late); }
+.card.warn p { margin: 0; }
+.card.note { border-left: 3px solid var(--line); }
+.card.note p:last-child { margin: 0; }
+.mine { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 10px 0 4px; font-size: 14px; }
+.mine ul { margin-top: 4px; }
+.rgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px; margin-bottom: 14px; }
+.rnote { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.rnote h3 { font-size: 15px; } .rnote p { margin: 0; font-size: 14px; color: var(--ink2); }
+a.ref { color: var(--line); text-decoration: none; font-size: 12px; font-weight: 600; margin-left: 2px; }
+.refs ol { padding-left: 22px; margin: 0; } .refs li { margin-bottom: 10px; font-size: 14px; overflow-wrap: anywhere; }
+footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Drum Groove Tool</p>
+    <h1 id="page-title">Record a take</h1>
+    <p class="sub" id="page-sub">Play along to a click. The tool finds every hit and shows whether you rush or drag, how consistent you are, which drum is early or late, and how much you swing. Everything runs in your browser; your recordings never leave this device.</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" data-view="new" aria-selected="true">New take</button>
+    <button type="button" role="tab" data-view="takes" aria-selected="false">Your takes <span id="take-count"></span></button>
+    <button type="button" role="tab" data-view="kit" aria-selected="false">Teach it your kit</button>
+    <button type="button" role="tab" data-view="settings" aria-selected="false">Setup &amp; coaching</button>
+  </nav>
+
+  <!-- New take -->
+  <section class="view" id="view-new">
+    <div class="card" id="new-form">
+      <div class="row" style="justify-content:space-between">
+        <div class="seg" role="group" aria-label="Source" id="source-seg">
+          <button type="button" data-source="mic" aria-pressed="true">Microphone</button>
+          <button type="button" data-source="file" aria-pressed="false">Upload a recording</button>
+          <button type="button" data-source="midi" aria-pressed="false" id="src-midi" hidden>E-kit (MIDI)</button>
+        </div>
+        <button type="button" class="btn ghost small" id="demo-btn" title="Makes a fake take with timing problems built in, then analyzes it">No drums handy? Try the demo</button>
+      </div>
+
+      <p class="muted" id="source-help" style="margin-top:12px"></p>
+      <div class="fields">
+        <label class="f" id="f-file" hidden>Recording (WAV, M4A, MP3, AIFF, FLAC or .mid)<input type="file" id="file" accept="audio/*,.m4a,.wav,.mp3,.aif,.aiff,.flac,.mid,.midi"></label>
+        <label class="f">Time signature
+          <select id="time">
+            <option>2/4</option><option>3/4</option><option selected>4/4</option><option>5/4</option><option>7/4</option>
+            <option>5/8</option><option>6/8</option><option>7/8</option><option>9/8</option><option>12/8</option>
+          </select>
+        </label>
+        <label class="f"><span id="bpm-label">Tempo (bpm)</span><input type="number" id="bpm" min="30" max="300" step="1" value="80" inputmode="numeric"></label>
+        <label class="f" id="f-bpmnote" hidden>Your tempo counts
+          <select id="bpm-note"><option value="beat">the beat</option><option value="quarter">quarter notes</option><option value="eighth">eighth notes</option><option value="dotted-quarter">dotted quarters</option></select>
+        </label>
+        <label class="f" id="f-bars">Bars to play<input type="number" id="bars" min="2" max="64" value="8" inputmode="numeric"></label>
+        <label class="f" id="f-countin">Count-in<select id="countin"><option value="1" selected>1 bar</option><option value="2">2 bars</option></select></label>
+        <label class="f" id="f-kit">Telling drums apart<select id="kit-select"></select></label>
+        <label class="f" id="f-mode">Instrument<select id="mode"><option value="drums">Drums</option><option value="generic">Anything else (timing only)</option></select></label>
+        <label class="f">Take name (optional)<input type="text" id="take-name" placeholder="e.g. verse groove" maxlength="60"></label>
+      </div>
+      <div class="row">
+        <button type="button" class="btn rec" id="go">● Start recording</button>
+        <span class="muted" id="go-note"></span>
+      </div>
+    </div>
+
+    <div class="card recorder" id="recorder" hidden aria-live="polite">
+      <div class="big" id="rec-big">Get ready…</div>
+      <div class="beats" id="rec-beats"></div>
+      <div class="meter" id="rec-meter-wrap"><div id="rec-meter"></div></div>
+      <p class="status" id="rec-status"></p>
+      <button type="button" class="btn ghost" id="rec-stop">■ Stop</button>
+    </div>
+
+    <div class="card" id="working" hidden aria-live="polite">
+      <h2 id="work-title">Analyzing your take…</h2>
+      <div class="progress"><div id="work-bar"></div></div>
+      <p class="status" id="work-status"></p>
+    </div>
+  </section>
+
+  <!-- Takes -->
+  <section class="view" id="view-takes" hidden>
+    <div class="takes" id="takes-list"></div>
+    <p class="muted" style="margin-top:14px">Takes are saved in this browser only. Clearing site data removes them; download any recording you want to keep.</p>
+  </section>
+
+  <!-- Kit -->
+  <section class="view" id="view-kit" hidden>
+    <div class="card lead">
+      <h2>Why teach it your kit?</h2>
+      <p>Out of the box, the tool guesses which drum was hit from fixed frequency ranges. That works on clean audio but mixes up kick and snare on phone and laptop mics. Teaching it fixes that: you play a few hits on each drum, and it learns what <em>your</em> drums sound like on <em>this</em> mic in <em>this</em> room. A profile called <code>default</code> is used automatically.</p>
+    </div>
+    <div id="kits-list"></div>
+    <div class="card" id="kit-learn">
+      <h2>Learn a new kit profile</h2>
+      <div class="fields">
+        <label class="f">Profile name<input type="text" id="kit-name" value="default" maxlength="30"></label>
+        <label class="f">Toms (including floor tom)<select id="kit-toms"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label class="check"><input type="checkbox" id="kit-crash"> Crash cymbal</label>
+        <label class="check"><input type="checkbox" id="kit-ride"> Ride cymbal</label>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" id="kit-mic">Record each drum with the mic</button>
+        <label class="btn ghost" style="cursor:pointer">Use a recording…<input type="file" id="kit-file" accept="audio/*,.m4a,.wav,.mp3,.aif,.aiff,.flac" hidden></label>
+      </div>
+      <p class="muted" id="kit-help" style="margin-top:10px"></p>
+      <div class="drumsteps" id="kit-steps" hidden></div>
+      <p class="status" id="kit-status"></p>
+    </div>
+    <div id="kit-page"></div>
+  </section>
+
+  <!-- Settings -->
+  <section class="view" id="view-settings" hidden>
+    <div class="card">
+      <h2>Measure your audio delay</h2>
+      <p class="muted">Every computer takes a moment to play a sound and hear it back. Measure that delay once, so “ahead of / behind the click” is accurate. <strong>Take headphones off</strong> and turn the volume up: the tool plays 12 clicks through your speakers and listens with the mic. Stay quiet while it runs.</p>
+      <p id="lat-now" class="muted"></p>
+      <div class="row"><button type="button" class="btn" id="cal-btn">Measure delay</button><button type="button" class="btn ghost small" id="cal-clear" hidden>Forget it</button></div>
+      <p class="status" id="cal-status"></p>
+      <p class="muted" style="margin-top:8px">When you record, wear <strong>wired</strong> headphones for the click, so the mic doesn't pick it up. Bluetooth headphones add a delay this measurement can't see.</p>
+    </div>
+    <div class="card" id="coach-settings">
+      <h2>Coaching from Claude (optional)</h2>
+      <p class="muted">After a take, Claude, Anthropic's AI model, can read your numbers like a drum teacher: what's working, timing fixes, exercises, and groove and fill ideas built from how you played. It uses <strong>your own</strong> Anthropic API key, at roughly 10–25 cents per take. Everything else on this page is free.</p>
+      <div class="fields">
+        <label class="f wide">Anthropic API key<input type="password" id="api-key" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
+        <label class="check"><input type="checkbox" id="api-remember"> Remember it on this device</label>
+        <label class="f wide">About you and what you're working toward (sent with each coaching request)<textarea id="goal" placeholder="e.g. learning drums to join an indie rock band"></textarea></label>
+      </div>
+      <div class="row"><button type="button" class="btn" id="api-save">Save</button><button type="button" class="btn ghost small" id="api-clear">Remove key</button><span class="status" id="api-status"></span></div>
+      <details class="more" style="margin-top:14px">
+        <summary>Getting a key, and keeping it safe</summary>
+        <ol class="steps" style="margin-top:8px">
+          <li>Sign in at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> (separate from a Claude.ai subscription).</li>
+          <li>Add prepaid credit under <strong>Settings → Billing</strong>. $5 covers a lot of takes, and nothing renews automatically.</li>
+          <li>Create a key under <strong>Settings → API Keys</strong> and paste it above.</li>
+        </ol>
+        <p class="keynote">Your key goes from this browser straight to Anthropic (api.anthropic.com) and nowhere else. Unless you tick “remember”, it's forgotten when you close the tab. Anyone with the key can spend your credit, so don't use this on a shared computer, and if a key is ever exposed, delete it in the Console and make a new one.</p>
+        <p class="keynote">What's sent: only the timing numbers and your groove written as a grid (e.g. “19 ms ahead of the click, snare on 2 and 4”), plus the note above. Your recording never leaves this device.</p>
+      </details>
+    </div>
+    <div class="card">
+      <h2>About the AI suggestions</h2>
+      <p class="muted">Improvising is about your own ideas, reacting in the moment. Nobody starts from nothing, though: drummers have always learned vocabulary from teachers, records and each other, then made it their own. The suggestions are that kind of vocabulary, built from <em>your</em> groove and tendencies. Every idea comes with ways to change it, and the “Your turn” challenges give you a constraint and leave the playing to you. The research notes in each report come from a hand-checked list of studies, never from the AI.</p>
+    </div>
+  </section>
+
+  <!-- Report -->
+  <section class="view" id="view-report" hidden></section>
+
+  <footer>Built by <a href="https://lunarfizztransport.github.io" target="_blank" rel="noopener">lunarfizztransport</a> · browser version of the <a href="https://github.com/lunarfizztransport/drum-groove-tool" target="_blank" rel="noopener">Drum Groove Tool</a>. Timing is measured on your device; coaching and ideas come from Claude (AI) and are suggestions to learn from, not parts to copy.</footer>
+</main>
+<div id="tip" hidden></div>
+
+<script type="module">
+import * as G from "./groove.js";
+
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const para = (t) => esc(t).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --- storage -------------------------------------------------------------------------
+
+const store = {
+  get(k, fallback = null) { try { const v = localStorage.getItem("groove." + k); return v === null ? fallback : JSON.parse(v); } catch { return fallback; } },
+  set(k, v) { try { localStorage.setItem("groove." + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("groove." + k); } catch {} },
+};
+const session = {
+  get(k) { try { return sessionStorage.getItem("groove." + k); } catch { return null; } },
+  set(k, v) { try { sessionStorage.setItem("groove." + k, v); } catch {} },
+  del(k) { try { sessionStorage.removeItem("groove." + k); } catch {} },
+};
+
+// Takes live in IndexedDB (they hold audio); fall back to memory if it's unavailable.
+const memTakes = new Map();
+let dbp = null;
+function db() {
+  if (!dbp) dbp = new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("drum-groove", 1);
+      req.onupgradeneeded = () => req.result.createObjectStore("takes", { keyPath: "id" });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return dbp;
+}
+async function tx(mode, fn) {
+  const d = await db();
+  if (!d) return fn(null);
+  return new Promise((resolve, reject) => {
+    const t = d.transaction("takes", mode);
+    const r = fn(t.objectStore("takes"));
+    t.oncomplete = () => resolve(r && "result" in r ? r.result : undefined);
+    t.onerror = () => reject(t.error);
+  });
+}
+const takes = {
+  async put(take) { const d = await db(); if (!d) { memTakes.set(take.id, take); return; } await tx("readwrite", (s) => s.put(take)); },
+  async get(id) { const d = await db(); if (!d) return memTakes.get(id); return tx("readonly", (s) => s.get(id)); },
+  async all() { const d = await db(); const list = d ? await tx("readonly", (s) => s.getAll()) : [...memTakes.values()]; return list.sort((a, b) => b.created - a.created); },
+  async del(id) { const d = await db(); if (!d) { memTakes.delete(id); return; } await tx("readwrite", (s) => s.delete(id)); },
+};
+const kits = { all: () => store.get("kits", {}), save(name, p) { const k = kits.all(); k[name] = p; store.set("kits", k); }, del(name) { const k = kits.all(); delete k[name]; store.set("kits", k); } };
+
+// --- views ----------------------------------------------------------------------------
+
+const TITLES = {
+  new: ["Record a take", "Play along to a click. The tool finds every hit and shows whether you rush or drag, how consistent you are, which drum is early or late, and how much you swing. Everything runs in your browser; your recordings never leave this device."],
+  takes: ["Your takes", "Every take you've recorded or uploaded in this browser."],
+  kit: ["Teach it your kit", "Better kick, snare and hi-hat labels, learned from a few hits on each drum."],
+  settings: ["Setup & coaching", "Measure your audio delay once, and optionally add an API key for coaching."],
+};
+function show(view, { title, sub } = {}) {
+  document.querySelectorAll(".view").forEach((v) => { v.hidden = v.id !== "view-" + view; });
+  document.querySelectorAll("nav.tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  const [t, s] = TITLES[view] || [title, sub];
+  $("page-title").textContent = title || t;
+  $("page-sub").textContent = sub ?? s;
+  if (view === "takes") renderTakes();
+  if (view === "kit") renderKits();
+  if (view === "settings") renderSettings();
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+
+// --- audio plumbing ----------------------------------------------------------------------
+
+let ctx = null;
+function audio() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+  if (ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+
+const WORKLET = `class Rec extends AudioWorkletProcessor {
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) this.port.postMessage({ frame: currentFrame, data: ch.slice() });
+    return true;
+  }
+}
+registerProcessor("groove-rec", Rec);`;
+let workletReady = null;
+
+/** Raw microphone access, with all the voice-call processing switched off (it ruins drum timing). */
+async function openMic() {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't use the microphone here. Try Chrome, Edge, Firefox or Safari, and make sure the page is on https.");
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  } catch (e) {
+    if (e.name === "NotAllowedError") throw new Error("The browser blocked the microphone. Allow it for this site (the icon in the address bar) and try again.");
+    if (e.name === "NotFoundError") throw new Error("No microphone found.");
+    throw e;
+  }
+}
+
+/** Starts capturing the mic. Returns {stop(): {y, sr, start}} where start is the context time of the first sample. */
+async function startCapture(stream, onLevel) {
+  const c = audio();
+  workletReady ||= c.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" })));
+  await workletReady;
+  const src = c.createMediaStreamSource(stream);
+  const node = new AudioWorkletNode(c, "groove-rec", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit" });
+  const mute = c.createGain(); mute.gain.value = 0;
+  src.connect(node); node.connect(mute); mute.connect(c.destination);
+  const chunks = [];
+  let peak = 0;
+  node.port.onmessage = (e) => {
+    chunks.push(e.data);
+    for (const v of e.data.data) peak = Math.max(peak, Math.abs(v));
+  };
+  const timer = setInterval(() => { onLevel?.(peak); peak = 0; }, 80);
+  return {
+    stop() {
+      clearInterval(timer);
+      node.port.onmessage = null;
+      src.disconnect(); node.disconnect(); mute.disconnect();
+      if (!chunks.length) throw new Error("The microphone didn't send any sound.");
+      const first = chunks[0].frame, last = chunks[chunks.length - 1];
+      const y = new Float32Array(last.frame + last.data.length - first);
+      for (const ch of chunks) y.set(ch.data, ch.frame - first);
+      return { y, sr: c.sampleRate, start: first / c.sampleRate };
+    },
+  };
+}
+
+function scheduleClick(bpm, beats, meter, at) {
+  const c = audio();
+  const y = G.clickTrack(bpm, beats, meter, c.sampleRate, 0.2);
+  const buf = c.createBuffer(1, y.length, c.sampleRate);
+  buf.copyToChannel(y, 0);
+  const s = c.createBufferSource();
+  s.buffer = buf; s.connect(c.destination); s.start(at);
+  return s;
+}
+
+/** Any AudioBuffer (or raw samples) -> mono Float32Array at 44.1 kHz, the rate the analysis expects. */
+async function toAnalysisRate(input, sr) {
+  let buf = input;
+  if (input instanceof Float32Array) {
+    if (sr === G.SR) return input;
+    buf = audio().createBuffer(1, input.length, sr);
+    buf.copyToChannel(input, 0);
+  }
+  if (buf.sampleRate === G.SR && buf.numberOfChannels === 1) return buf.getChannelData(0).slice();
+  const off = new OfflineAudioContext(1, Math.ceil(buf.duration * G.SR), G.SR);
+  const s = off.createBufferSource();
+  s.buffer = buf; s.connect(off.destination); s.start();
+  return (await off.startRendering()).getChannelData(0).slice();
+}
+
+function latencyNow(stream) {
+  const cal = store.get("latency");
+  if (cal) return { latency: cal.latency_s, source: "calibrated" };
+  const c = audio();
+  const inLat = stream?.getAudioTracks?.()[0]?.getSettings?.().latency || 0;
+  return { latency: (c.outputLatency || c.baseLatency || 0) + inLat, source: "estimated" };
+}
+
+const wavBlob = (y) => new Blob([G.encodeWav(y)], { type: "audio/wav" });
+const midiBlob = (bytes) => new Blob([bytes], { type: "audio/midi" });
+async function blobSamples(blob) { return G.decodeWav(new Uint8Array(await blob.arrayBuffer())).y; }
+
+// --- new take form ---------------------------------------------------------------------------
+
+let source = "mic";
+const hasMidi = !!navigator.requestMIDIAccess;
+if (hasMidi) $("src-midi").hidden = false;
+const HELP = {
+  mic: "Headphones on, then press record: you get a count-in, then play. Leave the tempo blank to record without a click (press Stop when you're done).",
+  file: "A phone recording works well (Voice Memos is fine): place it a few feet from the kit and play along to a metronome in headphones. Enter the tempo you played at if you know it.",
+  midi: "Connect your drum module's USB port and switch it on. The tool reads every pad hit directly: exact drums, exact timing, no mic needed, and the click can play out loud.",
+};
+function updateForm() {
+  document.querySelectorAll("#source-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.source === source)));
+  $("source-help").textContent = HELP[source];
+  $("f-file").hidden = source !== "file";
+  $("f-bars").hidden = $("f-countin").hidden = source === "file";
+  $("f-kit").hidden = source === "midi" || $("mode").value === "generic";
+  $("f-mode").hidden = source === "midi";
+  const meter = G.Meter.parse($("time").value);
+  $("f-bpmnote").hidden = meter.den === 4;
+  $("bpm-label").textContent = source === "file" ? "Tempo you played at (optional)" : meter.den === 4 ? "Tempo (bpm)" : `Tempo (bpm)`;
+  $("bpm").placeholder = source === "file" ? "unknown" : "no click";
+  $("go").textContent = source === "file" ? "Analyze recording" : source === "midi" ? "● Start recording (e-kit)" : "● Start recording";
+  $("go").classList.toggle("rec", source !== "file");
+  const bpm = +$("bpm").value;
+  const note = $("go-note");
+  if (source === "midi" && !bpm) note.textContent = "E-kit recording needs a tempo for the click.";
+  else if (source === "mic" && bpm) {
+    const m = G.Meter.parse($("time").value), bars = +$("bars").value || 8, ci = +$("countin").value;
+    const secs = ((bars + ci) * m.beats * 60) / m.beatBpm(bpm, $("bpm-note").value);
+    note.textContent = `About ${Math.round(secs)} seconds${store.get("latency") ? "" : " · tip: measure your audio delay once under Setup"}`;
+  } else note.textContent = "";
+}
+document.querySelectorAll("#source-seg button").forEach((b) => b.addEventListener("click", () => { source = b.dataset.source; updateForm(); }));
+["time", "bpm", "bars", "countin", "mode", "bpm-note"].forEach((id) => $(id).addEventListener("input", updateForm));
+
+function fillKitSelect(sel, chosen) {
+  const names = Object.keys(kits.all()).sort();
+  sel.innerHTML = `<option value="">Built-in rules (rough)</option>` + names.map((n) => `<option value="${esc(n)}">Kit profile: ${esc(n)}</option>`).join("");
+  sel.value = chosen !== undefined && (chosen === "" || names.includes(chosen)) ? chosen : names.includes("default") ? "default" : "";
+}
+
+function formSettings() {
+  const meter = G.Meter.parse($("time").value);
+  const raw = +$("bpm").value;
+  return {
+    meter, bpm: raw > 0 ? meter.beatBpm(raw, $("bpm-note").value) : null,
+    bars: Math.max(2, Math.min(64, +$("bars").value || 8)), countIn: +$("countin").value,
+    kit: $("kit-select").value, mode: source === "midi" ? "drums" : $("mode").value, name: $("take-name").value.trim(),
+  };
+}
+
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function takeTitle(ms) {
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+$("go").addEventListener("click", async () => {
+  audio(); // create/resume audio inside the click itself (Safari requires it)
+  const s = formSettings();
+  try {
+    if (source === "file") return await fromFile(s);
+    if (source === "midi") return await recordMidi(s);
+    return await recordMic(s);
+  } catch (e) {
+    endRecorder();
+    showError(e);
+  }
+});
+
+function showError(e) {
+  console.error(e);
+  $("working").hidden = true;
+  $("new-form").hidden = false;
+  $("go-note").innerHTML = `<span class="status err">${esc(e.message || e)}</span>`;
+}
+
+// --- recording -----------------------------------------------------------------------------------
+
+let stopRequested = false;
+$("rec-stop").addEventListener("click", () => { stopRequested = true; });
+
+function beginRecorder(beats) {
+  stopRequested = false;
+  $("new-form").hidden = true;
+  $("recorder").hidden = false;
+  $("rec-beats").innerHTML = Array.from({ length: beats }, (_, i) => `<span class="${i === 0 ? "one" : ""}"></span>`).join("");
+  $("rec-beats").hidden = !beats;
+  $("rec-status").textContent = "";
+  $("rec-meter").style.width = "0";
+}
+function endRecorder() { $("recorder").hidden = true; $("new-form").hidden = false; }
+function level(peak) {
+  $("rec-meter").style.width = Math.min(100, Math.round(peak * 100)) + "%";
+  $("rec-meter").style.background = peak > 0.98 ? "var(--late)" : "var(--ok)";
+}
+
+/** Shows count-in / bar / beat while the click plays; resolves at `end` (context time) or on Stop. */
+async function runClock(t0, beat, meter, countInBars, bars, end) {
+  const c = audio();
+  const dots = [...$("rec-beats").children];
+  while (c.currentTime < end && !stopRequested) {
+    const t = c.currentTime - t0;
+    if (t < 0) { $("rec-big").textContent = "Get ready…"; }
+    else {
+      const b = Math.floor(t / beat), barN = Math.floor(b / meter.beats), inBar = b % meter.beats;
+      dots.forEach((d, i) => d.classList.toggle("on", i === inBar));
+      if (barN < countInBars) $("rec-big").textContent = `Count-in: ${inBar + 1}`;
+      else if (barN < countInBars + bars) $("rec-big").textContent = `Bar ${barN - countInBars + 1} of ${bars}`;
+      else $("rec-big").textContent = "Done…";
+    }
+    await sleep(30);
+  }
+}
+
+async function recordMic(s) {
+  const stream = await openMic();
+  const c = audio();
+  beginRecorder(s.bpm ? s.meter.beats : 0);
+  $("rec-status").textContent = s.bpm ? "Headphones on: the click must not reach the mic." : "Recording. Play, then press Stop.";
+  const cap = await startCapture(stream, level);
+  let t0 = null, meta = { time: s.meter.name };
+  try {
+    if (s.bpm) {
+      const beat = 60 / s.bpm, total = (s.bars + s.countIn) * s.meter.beats;
+      t0 = c.currentTime + 0.6;
+      const click = scheduleClick(s.bpm, total, s.meter, t0);
+      await runClock(t0, beat, s.meter, s.countIn, s.bars, t0 + total * beat + 0.8);
+      if (stopRequested) click.stop();
+    } else {
+      $("rec-big").textContent = "Recording";
+      const startT = c.currentTime;
+      while (!stopRequested) { $("rec-big").textContent = `${Math.floor(c.currentTime - startT)} s`; await sleep(200); }
+    }
+  } finally {
+    stream.getTracks().forEach((t) => t.stop());
+  }
+  const rec = cap.stop();
+  endRecorder();
+  if (s.bpm && stopRequested) {
+    const heard = (rec.y.length / rec.sr - (t0 - rec.start)) / (60 / s.bpm) - s.countIn * s.meter.beats;
+    if (heard < 2 * s.meter.beats) throw new Error("Stopped before there was enough to analyze. Play at least a few bars.");
+  }
+  const y = await toAnalysisRate(rec.y, rec.sr);
+  if (s.bpm) {
+    const lat = latencyNow(stream);
+    // Where beat 1 of the first real bar lands in the recording, after latency.
+    meta = { ...meta, bpm: s.bpm, origin: t0 - rec.start + (s.countIn * s.meter.beats * 60) / s.bpm + lat.latency, latency_s: lat.latency, latency_source: lat.source };
+  }
+  await finishTake({ source: "mic", audio: wavBlob(y), meta, settings: s });
+}
+
+async function fromFile(s) {
+  const file = $("file").files[0];
+  if (!file) throw new Error("Choose a recording first.");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const name = s.name || file.name.replace(/\.[^.]+$/, "");
+  if (/\.midi?$/i.test(file.name)) {
+    const { hits, unknown } = G.hitsFromMidi(bytes);
+    return finishTake({ source: "midi", hits, unknown, meta: { time: s.meter.name }, settings: { ...s, name } });
+  }
+  let decoded;
+  try { decoded = await audio().decodeAudioData(bytes.buffer.slice(0)); }
+  catch { throw new Error(`Couldn't read ${file.name} in this browser. Try exporting it as WAV or M4A.`); }
+  const y = await toAnalysisRate(decoded);
+  await finishTake({ source: "file", audio: wavBlob(y), meta: { time: s.meter.name }, settings: { ...s, name }, fileName: file.name });
+}
+
+async function recordMidi(s) {
+  if (!s.bpm) throw new Error("E-kit recording needs a tempo for the click: enter one, e.g. 80.");
+  let access;
+  try { access = await navigator.requestMIDIAccess(); }
+  catch { throw new Error("The browser didn't allow MIDI access. Allow it for this site and try again."); }
+  const inputs = [...access.inputs.values()].filter((p) => !/virtual/i.test(p.name || ""));
+  if (!inputs.length) throw new Error("No e-kit found over MIDI. Connect the drum module's USB port, switch the module on, and try again.");
+  const drumLike = inputs.filter((p) => /nitro|alesis|drum|td-|dtx|roland|yamaha/i.test(p.name || ""));
+  const ports = drumLike.length ? drumLike : inputs;
+  const raw = [];
+  const onMsg = (e) => { const [st, note, vel] = e.data; if ((st & 0xf0) === 0x90 && vel > 0) raw.push([e.timeStamp, note, vel]); };
+  ports.forEach((p) => { p.onmidimessage = onMsg; });
+  const c = audio();
+  beginRecorder(s.meter.beats);
+  $("rec-meter-wrap").hidden = true;
+  $("rec-status").textContent = `Listening to ${ports.map((p) => p.name).join(", ")}. The click can play out loud.`;
+  const beat = 60 / s.bpm, total = (s.bars + s.countIn) * s.meter.beats;
+  const t0 = c.currentTime + 0.6;
+  const click = scheduleClick(s.bpm, total, s.meter, t0);
+  await sleep(50);
+  const ts = c.getOutputTimestamp ? c.getOutputTimestamp() : { contextTime: c.currentTime, performanceTime: performance.now() };
+  const t0perf = ts.performanceTime + (t0 - ts.contextTime) * 1000; // when the first click actually sounds
+  try {
+    await runClock(t0, beat, s.meter, s.countIn, s.bars, t0 + total * beat + 0.8);
+    if (stopRequested) click.stop();
+  } finally {
+    ports.forEach((p) => { p.onmidimessage = null; });
+    $("rec-meter-wrap").hidden = false;
+    endRecorder();
+  }
+  const hits = [], unknown = {};
+  for (const [stamp, note, vel] of raw) {
+    const t = (stamp - t0perf) / 1000;
+    if (t < 0) continue;
+    const name = G.NOTE_MAP[note];
+    if (name) hits.push({ time: Math.round(t * 1e4) / 1e4, instrument: name, velocity: vel });
+    else unknown[note] = (unknown[note] || 0) + 1;
+  }
+  const meta = { time: s.meter.name, bpm: s.bpm, origin: s.countIn * s.meter.beats * beat, port: ports.map((p) => p.name).join(", ") };
+  await finishTake({ source: "midi", hits, unknown, meta, settings: s });
+}
+
+$("demo-btn").addEventListener("click", async () => {
+  working("Making a demo take…", "A drummer playing a rock beat at 96 bpm who speeds up by 4 bpm, plays the snare 15 ms late, and ends with a fill.");
+  await sleep(30);
+  const y = G.synth({ bpm: 96, bars: 8, rushBpm: 4, snareLateMs: 15, jitterMs: 6 });
+  try {
+    await finishTake({
+      source: "demo", audio: wavBlob(y), meta: { time: "4/4" },
+      settings: { meter: G.FOUR_FOUR, bpm: 96, kit: "", mode: "drums", name: "Demo take (synthesized)" },
+    });
+  } catch (e) { showError(e); }
+});
+
+// --- analysis ----------------------------------------------------------------------------------------
+
+function working(title, status = "") {
+  $("new-form").hidden = true;
+  $("working").hidden = false;
+  $("work-title").textContent = title;
+  $("work-status").textContent = status;
+  $("work-bar").style.width = "0";
+  show("new");
+}
+const progress = (f) => { $("work-bar").style.width = Math.round(f * 100) + "%"; };
+
+async function finishTake({ source, audio: blob, hits, unknown, meta, settings, fileName }) {
+  const created = Date.now();
+  const take = {
+    id: newId(), created, name: settings.name || takeTitle(created), source, audio: blob || null,
+    hits: hits || null, unknown: unknown || null, meta, fileName: fileName || null,
+    opts: { time: settings.meter.name, bpm: meta.bpm ? null : settings.bpm, kit: settings.kit, mode: settings.mode },
+    analysis: null, coaching: null,
+  };
+  working("Analyzing your take…");
+  await runAnalysis(take);
+  await takes.put(take);
+  updateCount();
+  $("working").hidden = true;
+  $("new-form").hidden = false;
+  openReport(take.id);
+}
+
+/** Transcribe (or read MIDI) and analyze a take using its options; stores the results on it. */
+async function runAnalysis(take) {
+  const meter = G.Meter.parse(take.meta.bpm ? take.meta.time : take.opts.time);
+  const click = take.meta.bpm ? { bpm: take.meta.bpm, origin: take.meta.origin } : null;
+  // Drop anything in the count-in (minus half a beat of slack for early hits).
+  const start = click ? Math.max(0, click.origin - 60 / click.bpm / 2) : 0;
+  let tr, kitName = null;
+  if (take.hits) {
+    tr = G.midiTranscription(take.hits, take.unknown || {}, start);
+  } else {
+    $("work-status").textContent = "Finding every hit…";
+    const y = await blobSamples(take.audio);
+    kitName = take.opts.mode === "drums" && take.opts.kit && kits.all()[take.opts.kit] ? take.opts.kit : null;
+    tr = await G.transcribe(y, { mode: take.opts.mode, start, kit: kitName ? kits.all()[kitName] : null, onProgress: progress });
+  }
+  progress(1);
+  $("work-status").textContent = `Heard ${tr.hits.length} hits. Measuring timing…`;
+  await sleep(20);
+  const a = G.analyze(tr, { bpm: take.opts.bpm, meter, click });
+  a.kit = kitName;
+  a.source = take.hits ? "midi" : "audio";
+  a.audio_warnings = tr.warnings;
+  a.bpm_hint = take.opts.bpm;
+  if (take.meta.latency_source) a.latency_source = take.meta.latency_source;
+  take.analysis = a;
+  take.transcribed = tr.hits;
+}
+
+// --- takes list -------------------------------------------------------------------------------------
+
+async function updateCount() { const n = (await takes.all()).length; $("take-count").textContent = n ? `(${n})` : ""; }
+
+async function renderTakes() {
+  const list = await takes.all();
+  const el = $("takes-list");
+  if (!list.length) {
+    el.innerHTML = `<div class="card empty"><p>No takes yet.</p><button type="button" class="btn" data-go="new">Record your first take</button></div>`;
+    el.querySelector("[data-go]").onclick = () => show("new");
+    return;
+  }
+  el.innerHTML = list.map((t) => {
+    const a = t.analysis;
+    const facts = a ? [`${a.time_signature}`, `${a.n_bars} bars`, `${a.grid_bpm.toFixed(0)} bpm`, `spread ${a.tightness.std_ms.toFixed(0)} ms`] : ["not analyzed"];
+    const src = { mic: "mic", file: "upload", midi: "e-kit", demo: "demo" }[t.source] || t.source;
+    return `<div class="card take"><div class="t-main"><h3>${esc(t.name)}${t.coaching ? '<span class="badge">coached</span>' : ""}<span class="badge">${src}</span></h3>
+      <p class="muted" style="margin:2px 0 0">${esc(takeTitle(t.created))} · ${facts.map(esc).join(" · ")}</p></div>
+      <div class="row"><button type="button" class="btn small" data-open="${t.id}">Open report</button><button type="button" class="btn ghost small" data-del="${t.id}">Delete</button></div></div>`;
+  }).join("");
+  el.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openReport(b.dataset.open));
+  el.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Delete this take and its recording? This can't be undone.")) return;
+    await takes.del(b.dataset.del); updateCount(); renderTakes();
+  });
+}
+
+// --- report ------------------------------------------------------------------------------------------
+
+const INST_ORDER = ["crash", "ride", "hihat", "hihat_closed", "hihat_open", "hihat_pedal", "tom_high", "tom_mid", "snare", "rim", "tom_floor", "kick", "hit"];
+const INST_LABEL = { hihat: "Hi-hat", hihat_closed: "Hi-hat", hihat_open: "Open hat", hihat_pedal: "Hat pedal", tom_high: "High tom", tom_mid: "Mid tom", tom_floor: "Floor tom", hit: "Hits" };
+const instLabel = (i) => INST_LABEL[i] || i.charAt(0).toUpperCase() + i.slice(1);
+const instRank = (n) => (INST_ORDER.includes(n) ? INST_ORDER.indexOf(n) : INST_ORDER.length);
+const ms = (v) => (Math.abs(v) < 1 ? "on time" : `${Math.abs(v).toFixed(0)} ms ${v < 0 ? "early" : "late"}`);
+const spreadWord = (v) => (v < 10 ? "tight" : v < 20 ? "typical" : v < 30 ? "loose" : "very loose");
+const tile = (label, value, detail, tip) => `<div class="tile" title="${esc(tip)}"><div class="tlabel">${esc(label)}</div><div class="tvalue">${esc(value)}</div><div class="tdetail">${esc(detail)}</div></div>`;
+const positionLabel = (k) => (k === "downbeats" ? "On the beat" : ["e", "&", "a"].includes(k) ? `“${k}” notes` : k[0].toUpperCase() + k.slice(1));
+let reportUrls = [];
+const url = (blob) => { const u = URL.createObjectURL(blob); reportUrls.push(u); return u; };
+
+async function openReport(id) {
+  const take = await takes.get(id);
+  if (!take) return show("takes");
+  reportUrls.forEach((u) => URL.revokeObjectURL(u));
+  reportUrls = [];
+  show("report", { title: take.name, sub: "" });
+  $("page-sub").innerHTML = reportSub(take);
+  const el = $("view-report");
+  el.innerHTML = reportHtml(take);
+  wireReport(el, take);
+}
+
+function reportSub(take) {
+  const a = take.analysis;
+  const click = a.reference === "click";
+  const kitNote = a.source === "midi" ? "drums read directly from your e-kit (MIDI)"
+    : take.opts.mode === "generic" ? "timing only (any instrument)"
+    : a.kit ? `drums identified with your ‘${esc(a.kit)}’ kit profile` : "drums identified by built-in rules (rough; teach it your kit for better labels)";
+  return `<span class="eyebrow" style="display:block">Groove report · ${esc(takeTitle(take.created))}</span>` +
+    `${esc(a.time_signature)} · ${a.n_bars} bars · ${a.grid_bpm.toFixed(0)} bpm${a.beat_note === "quarter note" ? "" : ` (${esc(a.beat_note)}s)`} · ` +
+    `${click ? "played to a click" : "no click (measured against your own steady pulse)"} · ${kitNote}`;
+}
+
+function reportHtml(take) {
+  const a = take.analysis, c = take.coaching;
+  const t = a.tightness, tempo = a.tempo, sw = a.swing;
+  const click = a.reference === "click";
+  const labels = a.count_labels, slots = a.slots_per_beat;
+  const grid = (bars) => gridHtml(bars, labels, slots);
+  const tiles = [
+    tile("Timing spread", `${t.std_ms.toFixed(0)} ms`, `${spreadWord(t.std_ms)} (rule of thumb)`, "How far your hits scatter around your own groove. A pro benchmark is about 9 ms; see 'What the research says'."),
+    tile("Hits on target", `${t.pct_within_10ms.toFixed(0)}%`, `within 10 ms · ${t.pct_within_20ms.toFixed(0)}% within 20 ms`, "Share of hits that landed within 10 ms of where they belong."),
+  ];
+  if ("start_bpm" in tempo) tiles.push(tile("Tempo", `${tempo.start_bpm.toFixed(0)} → ${tempo.end_bpm.toFixed(0)} bpm`,
+    `${tempo.verdict} · ${tempo.drift_bpm_per_minute >= 0 ? "+" : ""}${tempo.drift_bpm_per_minute.toFixed(1)} bpm/min`, "Your tempo at the start vs the end of the take."));
+  if (click) {
+    const off = tempo.mean_offset_vs_click_ms;
+    tiles.push(tile("Vs the click", `${Math.abs(off).toFixed(0)} ms ${off < 0 ? "ahead" : "behind"}`,
+      a.latency_source === "estimated" ? "on average · delay estimated, not measured" : "on average",
+      "Average distance from the metronome. Ahead = rushing, behind = dragging."));
+  }
+  if (sw.eighth_swing_pct !== null) {
+    const feel = sw.feel.split(",")[0].replace("8ths ", "");
+    tiles.push(tile("Feel", feel[0].toUpperCase() + feel.slice(1), `8th notes ${sw.eighth_swing_pct.toFixed(0)}% · 50% = straight, 67% = swing`, "Where your off-beat 8th notes land between the beats."));
+  } else tiles.push(tile("Time signature", a.time_signature, sw.feel.split(": ").slice(-1)[0], "Swing % isn't measured in this time signature."));
+
+  const body = [];
+  body.push(`<div class="toolbar">
+    <button type="button" class="btn ghost small" data-act="back">← Your takes</button>
+    ${take.audio ? `<a class="btn ghost small" download="${esc(fileSafe(take.name))}.wav" href="${url(take.audio)}">⬇ Recording (WAV)</a>` : ""}
+    <a class="btn ghost small" download="${esc(fileSafe(take.name))}-transcription.mid" href="${url(midiBlob(G.hitsToMidi(take.transcribed || take.hits || [], a.grid_bpm, G.Meter.parse(a.time_signature))))}">⬇ Your take as MIDI</a>
+    <button type="button" class="btn ghost small" data-act="rename">Rename</button>
+    <button type="button" class="btn ghost small" data-act="delete">Delete</button></div>`);
+  body.push(`<section class="tiles">${tiles.join("")}</section>`);
+  if (take.audio) {
+    const bars = a.per_bar.map((b) => ({ bar: b.bar, start: b.start_s }));
+    body.push(`<section class="card player"><h2>Listen to this take</h2><audio id="take-audio" controls preload="metadata" src="${url(take.audio)}"></audio>` +
+      `<p class="muted">${bars.length ? "As it plays, the current bar lights up in the charts below. " : ""}Click a row in “Moments to look at” to hear that moment.</p>` +
+      `<script type="application/json" id="bars-json">${JSON.stringify(bars)}<\/script></section>`);
+  }
+  for (const w of a.audio_warnings || [])
+    body.push(`<section class="card warn"><p><strong>Recording problem:</strong> ${esc(w)} Timing results are still useful; which-drum labels may be wrong.</p></section>`);
+  if (click && a.latency_source === "estimated")
+    body.push(`<section class="card note"><p><strong>Tip:</strong> this browser estimated its audio delay instead of measuring it, so “ahead of / behind the click” may be off by a few tens of ms. Measure it once under <a href="#" data-act="setup">Setup &amp; coaching</a> for exact numbers. Spread, tempo and swing aren't affected.</p></section>`);
+  if (c && c.for_time_signature !== a.time_signature)
+    body.push(`<section class="card warn"><p><strong>Heads up:</strong> the coaching below was written when this take was analyzed as ${esc(c.for_time_signature)}, but it's now analyzed as ${esc(a.time_signature)}. Ask for coaching again to update it.</p></section>`);
+  if (c) body.push(`<section class="card lead"><h2>The short version</h2><p>${para(c.summary)}</p></section>`);
+
+  const p = a.patterns;
+  body.push(`<section class="card"><h2>Your groove</h2><p class="muted">The beat you played most often (${p.main_groove_bars} of ${a.n_bars} bars). Darker = harder hit, lighter = ghost note.</p>${grid([p.main_groove])}</section>`);
+  body.push(`<div class="two"><section class="card"><h2>Tempo, bar by bar</h2>${tempo.bpm_by_bar.length ? lineChart(tempo.bpm_by_bar, a.target_bpm) : ""}</section>` +
+    `<section class="card"><h2>Early or late, bar by bar</h2><p class="muted">Average distance from the ${click ? "click" : "steady pulse"} in each bar.</p>${barsChart(a.per_bar)}</section></div>`);
+  const instRows = Object.entries(a.per_instrument).sort((x, y) => instRank(x[0]) - instRank(y[0])).map(([k, v]) => [instLabel(k), v.mean_offset_ms_vs_groove, v.std_ms, v.count]);
+  const posRows = Object.entries(a.per_beat_position).map(([k, v]) => [positionLabel(k), v.mean_offset_ms, v.std_ms, v.count]);
+  body.push(`<div class="two"><section class="card"><h2>By drum</h2><p class="muted">Dot = average placement inside your groove; line = spread.</p>${dotChart(instRows)}</section>` +
+    `<section class="card"><h2>By count</h2><p class="muted">Are your in-between notes rushed or dragged compared with the beat?</p>${dotChart(posRows)}</section></div>`);
+  const worst = a.worst_events.slice(0, 6);
+  if (worst.length)
+    body.push(`<section class="card"><h2>Moments to look at</h2><p class="muted">The hits furthest from where they belonged. Clusters in one bar usually mean a fill got away from you.</p>` +
+      `<div class="scroll"><table><thead><tr><th>Bar</th><th>Count</th><th>Drum</th><th class="num">Off by</th></tr></thead><tbody>` +
+      worst.map((w) => `<tr class="seek" data-time="${w.time_s}" title="Click to hear this moment"><td>${w.bar}</td><td>${esc(w.count)}</td><td>${esc(w.instruments.map(instLabel).join(", "))}</td><td class="num">${ms(w.offset_ms)}</td></tr>`).join("") +
+      `</tbody></table></div></section>`);
+
+  const refs = [];
+  body.push(research(a, refs));
+  body.push(c ? coachingHtml(take, grid) : coachCta(take));
+  body.push(reanalyzeHtml(take));
+  body.push(references(refs));
+  return body.join("\n");
+}
+const fileSafe = (s) => s.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") || "take";
+
+function coachingHtml(take, grid) {
+  const a = take.analysis, c = take.coaching;
+  const meter = G.Meter.parse(a.time_signature), spb = meter.stepsPerBar;
+  const s8 = (a.swing.eighth_swing_pct || 50) / 100, s16 = (a.swing.sixteenth_swing_pct || 50) / 100;
+  const groove = G.kitNames(a.patterns.main_groove);
+  const parts = [`<h2 class="section">Coaching</h2>`];
+  if (c.strengths?.length) parts.push(`<section class="card"><h3>What's working</h3><ul>${c.strengths.map((s) => `<li>${para(s)}</li>`).join("")}</ul></section>`);
+  for (const ins of c.timing_insights || [])
+    parts.push(`<section class="card insight"><h3>${esc(ins.title)}</h3><p class="evidence">${para(ins.evidence)}</p><p>${para(ins.what_it_means)}</p><p class="fix"><strong>Try this:</strong> ${para(ins.fix)}</p></section>`);
+  parts.push(`<div class="two"><section class="card"><h3>Swing &amp; feel</h3><p>${para(c.swing_and_feel)}</p></section><section class="card"><h3>Dynamics</h3><p>${para(c.dynamics)}</p></section></div>`);
+  if (c.exercises?.length) {
+    parts.push(`<h2 class="section">Practice exercises</h2>`);
+    for (const e of c.exercises) parts.push(`<section class="card"><h3>${esc(e.name)} <span class="pill">start at ${e.start_bpm} bpm</span></h3><p>${para(e.instructions)}</p><p class="muted"><strong>Goal:</strong> ${para(e.goal)}</p></section>`);
+  }
+  if (c.variations?.length || c.fills?.length)
+    parts.push(`<h2 class="section">Ideas to explore</h2><section class="card note"><p><strong>Starting points, not scripts.</strong> These ideas are built from how you played. Use them like a teacher's examples: learn one, then change it until it sounds like you. The fills you make up yourself, in the moment, are the real goal.</p></section>`);
+  for (const [kind, title, key] of [["variation", "Variation ideas", "variations"], ["fill", "Fill ideas", "fills"]]) {
+    if (!c[key]?.length) continue;
+    parts.push(`<h3 class="subsection">${title}</h3>`);
+    c[key].forEach((p, i) => {
+      const bars = G.patternBars(p, spb);
+      const ctxBars = [...Array(kind === "fill" ? 3 : 2).fill(groove), ...bars, groove];
+      const audioUrl = url(wavBlob(G.renderBars(ctxBars, a.grid_bpm, meter, s8, s16)));
+      const nm = `${kind}${i + 1}`;
+      const mine = p.make_it_yours?.length ? `<div class="mine"><strong>Make it yours</strong><ul>${p.make_it_yours.map((m) => `<li>${para(m)}</li>`).join("")}</ul></div>` : "";
+      parts.push(`<section class="card"><h3>${esc(p.name)} <span class="pill">${esc(p.difficulty)}</span></h3><p>${para(p.why_it_fits)}</p>${grid(bars)}` +
+        `<p class="muted"><strong>How to practice:</strong> ${para(p.how_to_practice)}</p>${mine}` +
+        `<div class="idea-audio"><span class="muted">Listen with your groove (simple built-in drum sounds)</span><audio controls preload="none" src="${audioUrl}"></audio></div>` +
+        `<div class="links"><a class="midi" download="${nm}_in_context.mid" href="${url(midiBlob(G.patternsToMidi(ctxBars, a.grid_bpm, s8, s16, meter)))}">⬇ MIDI with your groove</a>` +
+        `<a class="midi" download="${nm}.mid" href="${url(midiBlob(G.patternsToMidi(bars, a.grid_bpm, s8, s16, meter)))}">⬇ MIDI alone</a></div></section>`);
+    });
+  }
+  if (c.your_turn?.length)
+    parts.push(`<h2 class="section">Your turn</h2><section class="card lead"><p class="muted">No answers here. Set the click, pick one, and improvise. Then record it and see how it felt.</p><ul>${c.your_turn.map((t) => `<li>${para(t)}</li>`).join("")}</ul></section>`);
+  parts.push(`<p class="muted">MIDI files open in GarageBand or any DAW (double-click, then press Space). <button type="button" class="btn ghost small" data-act="coach">Ask again</button></p>`);
+  return parts.join("\n");
+}
+
+function coachCta(take) {
+  const key = apiKey();
+  return `<h2 class="section">Coaching</h2><section class="card" id="coach-card">
+    <p>Get feedback like a drum teacher would give: what's working, your biggest timing issues with fixes, exercises, and variation and fill ideas built from this groove, each with audio and MIDI.</p>
+    ${key ? "" : `<p class="muted">This uses your own Anthropic API key (about 10–25 cents per take). Add one under <a href="#" data-act="setup">Setup &amp; coaching</a>.</p>`}
+    <label class="f" style="margin:10px 0">About you and what you're working toward (optional)<textarea id="coach-goal" placeholder="e.g. learning drums to join an indie rock band">${esc(store.get("goal", ""))}</textarea></label>
+    <div class="row"><button type="button" class="btn" data-act="coach" ${key ? "" : "disabled"}>Get coaching from Claude</button></div>
+    <p class="status" id="coach-status"></p></section>`;
+}
+
+function reanalyzeHtml(take) {
+  const a = take.analysis;
+  const clickTake = !!take.meta.bpm;
+  const times = ["2/4", "3/4", "4/4", "5/4", "7/4", "5/8", "6/8", "7/8", "9/8", "12/8"];
+  return `<details class="card more" id="reanalyze"><summary>Analyze again with different settings</summary>
+    <div class="fields">
+      ${clickTake ? `<p class="muted" style="grid-column:1/-1;margin:0">This take was played to the tool's click (${esc(take.meta.time)} at ${take.meta.bpm.toFixed(0)} bpm), so the grid is fixed.</p>` : `
+      <label class="f">Time signature<select id="ra-time">${times.map((t) => `<option ${t === take.opts.time ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <label class="f">Tempo you played at (blank = detect)<input type="number" id="ra-bpm" min="30" max="300" value="${take.opts.bpm ? r0(take.opts.bpm) : ""}" placeholder="detect"></label>`}
+      ${take.hits ? "" : `<label class="f">Telling drums apart<select id="ra-kit"></select></label>
+      <label class="f">Instrument<select id="ra-mode"><option value="drums" ${take.opts.mode === "drums" ? "selected" : ""}>Drums</option><option value="generic" ${take.opts.mode === "generic" ? "selected" : ""}>Anything else (timing only)</option></select></label>`}
+    </div><div class="row"><button type="button" class="btn small" data-act="reanalyze">Analyze again</button><span class="status" id="ra-status"></span></div></details>`;
+}
+const r0 = (x) => Math.round(x * 10) / 10;
+
+function research(a, refs) {
+  const cards = G.researchNotes(a).map(([title, text, ids]) => {
+    const marks = ids.map((sid) => { if (!refs.includes(sid)) refs.push(sid); return `<a class="ref" href="#ref-${sid}">[${refs.indexOf(sid) + 1}]</a>`; }).join("");
+    return `<div class="rnote"><h3>${esc(title)}</h3><p>${esc(text)} ${marks}</p></div>`;
+  });
+  return `<h2 class="section">What the research says</h2><p class="muted">Published studies on timing and groove that put your numbers in context. Every source is listed at the bottom of this page.</p><div class="rgrid">${cards.join("")}</div>`;
+}
+function references(refs) {
+  const items = refs.map((sid) => { const s = G.SOURCES[sid]; return `<li id="ref-${sid}">${esc(s.cite)} <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a><br><span class="muted">${esc(s.finding)}</span></li>`; }).join("");
+  return `<section class="card refs"><h2>Research sources</h2><p class="muted">Each source was checked by hand against the published paper. The coaching and ideas above come from AI and don't cite studies themselves.</p><ol>${items}</ol></section>`;
+}
+
+function gridHtml(bars, counts, slots) {
+  const spb = counts.length;
+  const insts = [...new Set(bars.flatMap((b) => Object.keys(b)))].sort((x, y) => instRank(x) - instRank(y));
+  const head = "<th></th>" + bars.map((_, b) => counts.map((c, i) => `<th class="${i % slots === 0 ? "beat" : ""}${i === 0 && b ? " barstart" : ""}">${esc(c)}</th>`).join("")).join("");
+  const rows = insts.map((inst) => {
+    const cells = bars.map((bar, b) => [...(bar[inst] || "-".repeat(spb))].map((ch, i) => {
+      let cls = { X: "hit accent", x: "hit", g: "hit ghost" }[ch] || "";
+      if (i % slots === 0) cls += " beat";
+      if (i === 0 && b) cls += " barstart";
+      const label = { X: "accent", x: "hit", g: "ghost" }[ch] || "rest";
+      return `<td class="${cls.trim()}" title="${esc(instLabel(inst))}, ${esc(counts[i] || "beat")}: ${label}"></td>`;
+    }).join("")).join("");
+    return `<tr><th class="inst">${esc(instLabel(inst))}</th>${cells}</tr>`;
+  }).join("");
+  return `<div class="scroll"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// charts (inline SVG), same as the Python report
+const W = 560, H = 220, ML = 44, MR = 16, MT = 14, MB = 30;
+const f1 = (x) => x.toFixed(1);
+const svg = (g, label, height = H) => `<svg class="chart" viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(label)}">${g.join("")}</svg>`;
+function yTicks(lo, hi, sy, fmt, zero = false) {
+  const out = [];
+  for (let k = 0; k < 5; k++) {
+    const v = lo + ((hi - lo) * k) / 4;
+    out.push(`<line class="${zero && k === 2 ? "zero" : "gridline"}" x1="${ML}" x2="${W - MR}" y1="${f1(sy(v))}" y2="${f1(sy(v))}"/>`);
+    if (!(zero && (k === 0 || k === 4))) out.push(`<text class="axis num" x="${ML - 6}" y="${f1(sy(v) + 4)}" text-anchor="end">${fmt(zero && k === 2 ? 0 : v)}</text>`);
+  }
+  return out.join("");
+}
+function barPath(x, w, y0, y1, r = 4) {
+  const h = Math.abs(y1 - y0);
+  r = Math.min(r, h, w / 2);
+  if (y1 < y0) return `M${f1(x)},${f1(y0)} V${f1(y1 + r)} Q${f1(x)},${f1(y1)} ${f1(x + r)},${f1(y1)} H${f1(x + w - r)} Q${f1(x + w)},${f1(y1)} ${f1(x + w)},${f1(y1 + r)} V${f1(y0)} Z`;
+  return `M${f1(x)},${f1(y0)} V${f1(y1 - r)} Q${f1(x)},${f1(y1)} ${f1(x + r)},${f1(y1)} H${f1(x + w - r)} Q${f1(x + w)},${f1(y1)} ${f1(x + w)},${f1(y1 - r)} V${f1(y0)} Z`;
+}
+function lineChart(points, target) {
+  const xs = points.map((p) => p.bar), ys = points.map((p) => p.bpm);
+  const all = target ? [...ys, target] : ys;
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const pad = Math.max(1, (hi - lo) * 0.25);
+  lo -= pad; hi += pad;
+  const x0 = Math.min(...xs), x1 = Math.max(...xs) > x0 ? Math.max(...xs) : x0 + 1;
+  const sx = (x) => ML + ((x - x0) / (x1 - x0)) * (W - ML - MR), sy = (y) => MT + ((hi - y) / (hi - lo)) * (H - MT - MB);
+  const g = [yTicks(lo, hi, sy, (v) => v.toFixed(0))];
+  if (target) g.push(`<line class="ref" x1="${ML}" x2="${W - MR}" y1="${f1(sy(target))}" y2="${f1(sy(target))}"/><text class="reflabel" x="${W - MR}" y="${f1(sy(target) - 6)}" text-anchor="end">click ${target.toFixed(0)}</text>`);
+  g.push(`<path class="line" d="${xs.map((x, i) => `${i ? "L" : "M"}${f1(sx(x))},${f1(sy(ys[i]))}`).join(" ")}"/>`);
+  xs.forEach((x, i) => {
+    g.push(`<circle class="pt" data-bar="${x}" cx="${f1(sx(x))}" cy="${f1(sy(ys[i]))}" r="4.5"/><circle class="hit-target" cx="${f1(sx(x))}" cy="${f1(sy(ys[i]))}" r="14" data-tip="Bar ${x}: ${ys[i].toFixed(1)} bpm"/>`);
+    g.push(`<text class="axis" data-bar="${x}" x="${f1(sx(x))}" y="${H - 10}" text-anchor="middle">${x}</text>`);
+  });
+  return svg(g, "Tempo by bar line chart");
+}
+function barsChart(perBar) {
+  const vals = perBar.map((b) => b.mean_offset_ms_vs_grid);
+  const m = Math.max(20, Math.max(...vals.map(Math.abs)) * 1.15);
+  const band = (W - ML - MR) / perBar.length, bw = Math.min(36, band - 4);
+  const sy = (y) => MT + ((m - y) / (2 * m)) * (H - MT - MB);
+  const g = [yTicks(-m, m, sy, (v) => (v > 0 ? "+" : "") + v.toFixed(0), true),
+    `<text class="axis" x="${ML - 6}" y="${MT + 4}" text-anchor="end">late</text><text class="axis" x="${ML - 6}" y="${H - MB}" text-anchor="end">early</text>`];
+  perBar.forEach((b, i) => {
+    const v = b.mean_offset_ms_vs_grid, cx = ML + band * (i + 0.5);
+    g.push(`<path class="${v > 0 ? "late" : "early"}" data-bar="${b.bar}" d="${barPath(cx - bw / 2, bw, sy(0), sy(v))}"/>`);
+    g.push(`<rect class="hit-target" x="${f1(cx - band / 2)}" y="${MT}" width="${f1(band)}" height="${H - MT - MB}" data-tip="Bar ${b.bar}: ${ms(v)} on average · spread ${b.std_ms.toFixed(0)} ms · ${b.events} hits"/>`);
+    g.push(`<text class="axis" data-bar="${b.bar}" x="${f1(cx)}" y="${H - 10}" text-anchor="middle">${b.bar}</text>`);
+  });
+  return svg(g, "Average timing offset per bar");
+}
+function dotChart(rows) {
+  if (!rows.length) return `<p class="muted">Not enough hits.</p>`;
+  const lw = 110, rw = 110, rowH = 40, h = MT + rowH * rows.length + 26;
+  const m = Math.max(25, Math.max(...rows.map(([, mn, sd]) => Math.abs(mn) + sd)) * 1.05);
+  const sx = (v) => lw + ((v + m) / (2 * m)) * (W - lw - rw);
+  const g = [`<line class="zero" x1="${f1(sx(0))}" x2="${f1(sx(0))}" y1="${MT - 4}" y2="${h - 22}"/>`,
+    `<text class="axis" x="${f1(sx(-m))}" y="${h - 6}">← early</text><text class="axis" x="${f1(sx(0))}" y="${h - 6}" text-anchor="middle">on the beat</text><text class="axis" x="${f1(sx(m))}" y="${h - 6}" text-anchor="end">late →</text>`];
+  rows.forEach(([label, mean, sd, count], i) => {
+    const y = MT + rowH * i + rowH / 2;
+    const cls = mean > 2 ? "late" : mean < -2 ? "early" : "even";
+    g.push(`<text class="rowlabel" x="${lw - 12}" y="${f1(y + 4)}" text-anchor="end">${esc(label)}</text>`);
+    g.push(`<line class="whisker" x1="${f1(sx(Math.max(-m, mean - sd)))}" x2="${f1(sx(Math.min(m, mean + sd)))}" y1="${f1(y)}" y2="${f1(y)}"/>`);
+    g.push(`<circle class="dot ${cls}" cx="${f1(sx(mean))}" cy="${f1(y)}" r="6"/><text class="val" x="${W - rw + 12}" y="${f1(y + 4)}">${ms(mean)}</text>`);
+    g.push(`<rect class="hit-target" x="0" y="${f1(y - rowH / 2)}" width="${W}" height="${rowH}" data-tip="${esc(label)}: ${ms(mean)} on average, spread ±${sd.toFixed(0)} ms (${count} hits)"/>`);
+  });
+  return svg(g, "Average placement by row", h);
+}
+
+function wireReport(el, take) {
+  el.querySelector('[data-act="back"]').onclick = () => show("takes");
+  el.querySelectorAll('[data-act="setup"]').forEach((a) => a.onclick = (e) => { e.preventDefault(); show("settings"); });
+  el.querySelector('[data-act="delete"]').onclick = async () => {
+    if (!confirm("Delete this take and its recording? This can't be undone.")) return;
+    await takes.del(take.id); updateCount(); show("takes");
+  };
+  el.querySelector('[data-act="rename"]').onclick = async () => {
+    const n = prompt("Name this take", take.name);
+    if (!n || !n.trim()) return;
+    take.name = n.trim().slice(0, 60); await takes.put(take); openReport(take.id);
+  };
+  const audioEl = $("take-audio");
+  const barsJson = $("bars-json");
+  if (audioEl && barsJson) {
+    const bars = JSON.parse(barsJson.textContent);
+    const barLen = bars.length > 1 ? bars[1].start - bars[0].start : 2;
+    let current = null;
+    audioEl.addEventListener("timeupdate", () => {
+      const t = audioEl.currentTime;
+      let b = null;
+      for (const x of bars) if (x.start <= t && t < x.start + barLen * 1.05) b = x.bar;
+      if (b === current) return;
+      el.querySelectorAll("[data-bar].current").forEach((n) => n.classList.remove("current"));
+      if (b !== null) el.querySelectorAll(`[data-bar="${b}"]`).forEach((n) => n.classList.add("current"));
+      current = b;
+    });
+    el.querySelectorAll("tr.seek").forEach((row) => row.onclick = () => { audioEl.currentTime = Math.max(0, +row.dataset.time - 1.5); audioEl.play(); });
+  }
+  el.querySelectorAll('[data-act="coach"]').forEach((b) => b.onclick = () => coachTake(take));
+  const raKit = $("ra-kit");
+  if (raKit) fillKitSelect(raKit, take.opts.kit || "");
+  el.querySelector('[data-act="reanalyze"]').onclick = async () => {
+    if ($("ra-time")) take.opts.time = $("ra-time").value;
+    if ($("ra-bpm")) {
+      const meter = G.Meter.parse(take.opts.time);
+      take.opts.bpm = +$("ra-bpm").value > 0 ? meter.beatBpm(+$("ra-bpm").value, "beat") : null;
+    }
+    if (raKit) take.opts.kit = raKit.value;
+    if ($("ra-mode")) take.opts.mode = $("ra-mode").value;
+    $("ra-status").textContent = "Analyzing…";
+    try {
+      await runAnalysis(take);
+      await takes.put(take);
+      openReport(take.id);
+    } catch (e) { $("ra-status").textContent = e.message; $("ra-status").classList.add("err"); }
+  };
+}
+
+const tip = $("tip");
+document.addEventListener("mousemove", (e) => {
+  const t = e.target.closest?.("[data-tip]");
+  if (!t) { tip.hidden = true; return; }
+  tip.textContent = t.dataset.tip; tip.hidden = false;
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = e.clientY + 14 + "px";
+});
+
+// --- coaching ------------------------------------------------------------------------------------------
+
+function apiKey() { return session.get("key") || store.get("key", null); }
+
+async function coachTake(take) {
+  const key = apiKey();
+  if (!key) return show("settings");
+  const goalEl = $("coach-goal");
+  const goal = goalEl ? goalEl.value.trim() : store.get("goal", "");
+  if (goalEl) store.set("goal", goal);
+  let status = $("coach-status");
+  if (!status) { // "Ask again" on an already-coached take
+    take.coaching = null;
+    $("view-report").innerHTML = reportHtml(take);
+    wireReport($("view-report"), take);
+    document.getElementById("coach-card").scrollIntoView({ behavior: "smooth" });
+    status = $("coach-status");
+  }
+  const btn = document.querySelector('#coach-card [data-act="coach"]');
+  btn.disabled = true;
+  status.classList.remove("err");
+  status.textContent = "Sending your numbers to Claude… (this can take a minute or two)";
+  try {
+    const coaching = await askClaude(take.analysis, goal, key, (n) => { status.textContent = `Claude is writing your feedback… ${n.toLocaleString()} characters so far`; });
+    take.coaching = { ...coaching, for_time_signature: take.analysis.time_signature };
+    await takes.put(take);
+    openReport(take.id);
+  } catch (e) {
+    console.error(e);
+    status.classList.add("err");
+    status.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+let sdk = null;
+async function askClaude(analysis, goal, key, onChars) {
+  try { sdk ||= await import(SDK_URL); }
+  catch { throw new Error("Couldn't load Anthropic's library. Check your connection (or an ad blocker) and try again."); }
+  const Anthropic = sdk.default;
+  const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+  let chars = 0;
+  try {
+    const stream = client.beta.messages.stream({
+      model: G.MODEL,
+      max_tokens: 32000,
+      system: G.COACH_SYSTEM,
+      output_config: { effort: "high", format: { type: "json_schema", schema: G.COACHING_SCHEMA } },
+      // If a safety classifier declines, re-run on Anthropic's recommended fallback model.
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      messages: [{ role: "user", content: G.coachPrompt(analysis, goal) }],
+    });
+    stream.on("text", (t) => { chars += t.length; onChars(chars); });
+    const msg = await stream.finalMessage();
+    if (msg.stop_reason === "refusal") throw new Error("Claude declined to answer this request.");
+    if (msg.stop_reason === "max_tokens") throw new Error("Claude's answer was cut off. Try again.");
+    const text = msg.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+    try { return JSON.parse(text); }
+    catch { throw new Error("Claude's answer came back in an unexpected shape. Try again."); }
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) throw new Error("That API key didn't work. Check it under Setup & coaching (or make a new one in the Console).");
+    if (e instanceof Anthropic.PermissionDeniedError) throw new Error("That API key isn't allowed to use this model. Check your Console settings.");
+    if (e instanceof Anthropic.RateLimitError) throw new Error("Anthropic says you're over your rate limit or out of credit. Check Billing in the Console, or wait a minute.");
+    if (e instanceof Anthropic.BadRequestError) throw new Error(/credit/i.test(e.message) ? "Your Anthropic account is out of credit. Add some under Settings → Billing in the Console." : `Anthropic rejected the request: ${e.message}`);
+    if (e instanceof Anthropic.APIConnectionError) throw new Error("Couldn't reach Anthropic. Check your connection and try again.");
+    if (e instanceof Anthropic.APIError) throw new Error(`Coaching failed: ${e.message}`);
+    throw e;
+  }
+}
+
+// --- settings: calibration and API key ------------------------------------------------------------------
+
+function renderSettings() {
+  const cal = store.get("latency");
+  $("lat-now").innerHTML = cal ? `Measured delay: <strong>${(cal.latency_s * 1000).toFixed(0)} ms</strong> (on ${esc(cal.date)}, heard ${cal.heard}/12 clicks). Measure again if you change speakers, headphones or microphone.`
+    : "Not measured yet. Until you do, the tool uses the browser's own estimate.";
+  $("cal-clear").hidden = !cal;
+  const remembered = store.get("key", null);
+  $("api-key").value = apiKey() || "";
+  $("api-remember").checked = !!remembered;
+  $("goal").value = store.get("goal", "");
+  $("api-status").textContent = apiKey() ? "✓ Key added" : "";
+}
+$("api-save").onclick = () => {
+  const k = $("api-key").value.trim();
+  store.set("goal", $("goal").value.trim());
+  if (k && !/^sk-ant-/.test(k)) { $("api-status").textContent = "That doesn't look like an Anthropic API key (they start with sk-ant-)."; return; }
+  session.del("key"); store.del("key");
+  if (k) { if ($("api-remember").checked) store.set("key", k); else session.set("key", k); }
+  $("api-status").textContent = k ? "✓ Saved" : "Saved (no key)";
+};
+$("api-clear").onclick = () => { session.del("key"); store.del("key"); $("api-key").value = ""; $("api-status").textContent = "Key removed from this device."; };
+$("cal-clear").onclick = () => { store.del("latency"); renderSettings(); };
+
+$("cal-btn").onclick = async () => {
+  audio();
+  const st = $("cal-status");
+  st.classList.remove("err");
+  $("cal-btn").disabled = true;
+  try {
+    const stream = await openMic();
+    st.textContent = "Listening… stay quiet.";
+    const c = audio();
+    const cap = await startCapture(stream);
+    const bpm = 100, beats = 12;
+    const t0 = c.currentTime + 0.5;
+    scheduleClick(bpm, beats, G.FOUR_FOUR, t0);
+    while (c.currentTime < t0 + (beats * 60) / bpm + 0.6) await sleep(50);
+    const rec = cap.stop();
+    stream.getTracks().forEach((t) => t.stop());
+    st.textContent = "Measuring…";
+    const y = await toAnalysisRate(rec.y, rec.sr);
+    const r = await G.measureLatency(y, bpm, beats, t0 - rec.start);
+    store.set("latency", { latency_s: r.latency, heard: r.heard, spread_ms: r.spread * 1000, date: new Date().toLocaleDateString() });
+    st.textContent = `✓ Delay: ${(r.latency * 1000).toFixed(0)} ms (spread ${(r.spread * 1000).toFixed(1)} ms). Saved.`;
+    renderSettings();
+  } catch (e) {
+    st.classList.add("err");
+    st.textContent = e.message;
+  } finally { $("cal-btn").disabled = false; }
+};
+
+// --- kit profiles ---------------------------------------------------------------------------------------
+
+const DRUM_NAME = { kick: "Kick", snare: "Snare", hihat: "Hi-hat (closed)", tom_high: "High tom", tom_mid: "Mid tom", tom_floor: "Floor tom", crash: "Crash", ride: "Ride" };
+function kitDrums() {
+  const toms = { 1: ["tom_high"], 2: ["tom_high", "tom_floor"], 3: ["tom_high", "tom_mid", "tom_floor"] }[$("kit-toms").value] || [];
+  return [...G.DRUMS, ...toms, ...($("kit-crash").checked ? ["crash"] : []), ...($("kit-ride").checked ? ["ride"] : [])];
+}
+function kitHelp() {
+  const drums = kitDrums();
+  $("kit-help").textContent = `With the mic: you'll play 4 hits on each drum in turn. With a recording (e.g. from your phone): play ` +
+    drums.map((d) => `4 ${G.SPOKEN[d].toLowerCase()}`).join(", wait 3 seconds, ") + ", in that order.";
+}
+["kit-toms", "kit-crash", "kit-ride"].forEach((id) => $(id).addEventListener("input", kitHelp));
+
+function renderKits() {
+  kitHelp();
+  const all = kits.all(), names = Object.keys(all).sort();
+  if (!names.includes("default") && names.length) $("kit-name").value = $("kit-name").value || "default";
+  $("kits-list").innerHTML = names.length ? `<div class="card"><h2>Your kit profiles</h2><div class="takes">` + names.map((n) => {
+    const p = all[n];
+    return `<div class="take"><div class="t-main"><strong>${esc(n)}</strong>${n === "default" ? '<span class="badge">used automatically</span>' : ""}<br><span class="muted">Learned ${esc(p.learned)} from ${esc(p.source)} · ${p.drums.map((d) => esc(DRUM_NAME[d] || d)).join(", ")}</span></div>
+      <div class="row"><button type="button" class="btn ghost small" data-kview="${esc(n)}">View</button><button type="button" class="btn ghost small" data-kdel="${esc(n)}">Delete</button></div></div>`;
+  }).join("") + `</div></div>` : "";
+  document.querySelectorAll("[data-kview]").forEach((b) => b.onclick = () => kitPage(b.dataset.kview, kits.all()[b.dataset.kview], {}, G.checkProfile(kits.all()[b.dataset.kview])));
+  document.querySelectorAll("[data-kdel]").forEach((b) => b.onclick = () => { if (confirm(`Delete kit profile '${b.dataset.kdel}'?`)) { kits.del(b.dataset.kdel); $("kit-page").innerHTML = ""; renderKits(); fillKitSelect($("kit-select")); } });
+}
+
+function kitNameOk() {
+  const n = $("kit-name").value.trim().replace(/\s+/g, "-");
+  if (!n) { $("kit-status").textContent = "Give the profile a name, e.g. default or phone."; return null; }
+  return n;
+}
+
+$("kit-mic").onclick = async () => {
+  audio();
+  const name = kitNameOk();
+  if (!name) return;
+  const drums = kitDrums();
+  const st = $("kit-status");
+  st.classList.remove("err");
+  const steps = $("kit-steps");
+  steps.hidden = false;
+  steps.innerHTML = drums.map((d, i) => `<div class="drumstep" id="ks-${d}"><span>${i + 1}. Play 4 <strong>${esc(G.SPOKEN[d])}</strong> hits, about one per second</span><span><button type="button" class="btn small" data-krec="${d}" ${i ? "disabled" : ""}>● Record</button></span></div>`).join("");
+  st.textContent = "Press Record for each drum, then play. Each recording lasts 5 seconds.";
+  const spectra = {}, clips = {};
+  let stream;
+  try { stream = await openMic(); } catch (e) { st.classList.add("err"); st.textContent = e.message; return; }
+  steps.querySelectorAll("[data-krec]").forEach((b) => b.onclick = async () => {
+    audio();
+    const d = b.dataset.krec;
+    steps.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+    const c = audio();
+    const cap = await startCapture(stream);
+    const end = c.currentTime + 5;
+    while (c.currentTime < end) { b.textContent = `Recording… ${Math.ceil(end - c.currentTime)}`; await sleep(100); }
+    const rec = cap.stop();
+    const y = await toAnalysisRate(rec.y, rec.sr);
+    try {
+      const r = await G.learnDrumClip(y);
+      spectra[d] = r.spectra; clips[d] = y;
+      const row = $("ks-" + d);
+      row.classList.add("done");
+      row.lastElementChild.innerHTML = `<span class="ok">✓ Got ${r.n} hits${r.extra ? ` (ignored ${r.extra} echo blip${r.extra > 1 ? "s" : ""})` : ""}</span> <button type="button" class="btn ghost small" data-krec="${d}">Redo</button>`;
+      row.querySelector("[data-krec]").onclick = b.onclick;
+    } catch (e) {
+      b.textContent = "● Try again";
+      st.textContent = e.message;
+    }
+    const nextTodo = drums.find((x) => !spectra[x]);
+    steps.querySelectorAll("[data-krec]").forEach((x) => { x.disabled = !(spectra[x.dataset.krec] || x.dataset.krec === nextTodo); });
+    if (!nextTodo) {
+      stream.getTracks().forEach((t) => t.stop());
+      const profile = G.profileFromClips(spectra, "computer mic");
+      finishKit(name, profile, clips);
+    }
+  });
+};
+
+$("kit-file").onchange = async () => {
+  const file = $("kit-file").files[0];
+  $("kit-file").value = "";
+  const name = kitNameOk();
+  if (!file || !name) return;
+  const st = $("kit-status");
+  st.classList.remove("err");
+  st.textContent = "Listening to the recording…";
+  try {
+    const decoded = await audio().decodeAudioData(await file.arrayBuffer());
+    const y = await toAnalysisRate(decoded);
+    const { profile, clips } = await G.learnFromRecording(y, kitDrums(), file.name);
+    finishKit(name, profile, clips);
+  } catch (e) { st.classList.add("err"); st.textContent = e.message; }
+};
+
+function finishKit(name, profile, clips) {
+  kits.save(name, profile);
+  const problems = G.checkProfile(profile);
+  $("kit-status").textContent = `Saved kit profile '${name}'.` + (name === "default" ? " It's used automatically from now on." : " Pick it under “Telling drums apart” when you record.");
+  $("kit-steps").hidden = true;
+  fillKitSelect($("kit-select"));
+  renderKits();
+  kitPage(name, profile, clips, problems);
+}
+
+function kitPage(name, profile, clips, problems) {
+  const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(1)} kHz` : `${f.toFixed(0)} Hz`);
+  const cards = profile.drums.map((d) => {
+    const t = profile.templates[d], edges = profile.band_edges_hz;
+    const a = clips[d] ? `<audio controls preload="none" src="${URL.createObjectURL(wavBlob(clips[d]))}"></audio>` : "";
+    const w = 560, h = 150, ml = 8, mb = 26, mt = 10, band = (w - 2 * ml) / t.length, top = Math.max(...t) * 1.1 || 1;
+    const g = [`<line class="zero" x1="${ml}" x2="${w - ml}" y1="${h - mb}" y2="${h - mb}"/>`];
+    t.forEach((v, i) => {
+      const x = ml + i * band, y1 = mt + (1 - v / top) * (h - mt - mb);
+      if (v > 0) g.push(`<path class="spec" d="${barPath(x + 1, band - 2, h - mb, y1, 2)}"/>`);
+      g.push(`<rect class="hit-target" x="${f1(x)}" y="${mt}" width="${f1(band)}" height="${h - mt - mb}" data-tip="${hz(edges[i])}–${hz(edges[i + 1])}: ${(100 * v).toFixed(0)}% of the sound"/>`);
+    });
+    for (const f of [50, 200, 1000, 5000, 15000]) {
+      const idx = Math.max(0, Math.min(t.length - 1, edges.slice(1).filter((e) => e <= f).length));
+      g.push(`<text class="axis" x="${f1(ml + (idx + 0.5) * band)}" y="${h - 8}" text-anchor="middle">${hz(f)}</text>`);
+    }
+    return `<section class="card"><h3>${esc(DRUM_NAME[d] || d)}</h3>${a}<p class="muted">Learned from ${profile.hits[d]} hits · centre of its sound ≈ ${hz(G.brightness(profile, d))}</p>` +
+      `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Learned sound of the ${esc(d)}">${g.join("")}</svg></section>`;
+  });
+  const status = problems.length
+    ? `<section class="card warn"><p><strong>This profile may not work well:</strong></p><ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul><p class="muted">Learn it again with the same name to replace it.</p></section>`
+    : `<section class="card note"><p><strong>✓ Looks good.</strong> The drums sound distinct, from the deep kick to the bright hi-hat, so the tool can tell them apart.</p></section>`;
+  $("kit-page").innerHTML = `<h2 class="section">Kit profile: ${esc(name)}</h2>${status}<div class="two">${cards.join("")}</div>`;
+  $("kit-page").scrollIntoView({ behavior: "smooth" });
+}
+
+// --- start --------------------------------------------------------------------------------------------------
+
+fillKitSelect($("kit-select"));
+updateForm();
+updateCount();
+</script>
+</body>
+</html>

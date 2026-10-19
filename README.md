@@ -40,6 +40,28 @@ was written with Claude Code. My decisions shaped the tool:
 - adding phone-recording uploads and e-kit support;
 - fixing problems found by testing on a real kit, such as missed kicks and extra hits from speaker echo.
 
+## Try it in your browser
+
+**[lunarfizztransport.github.io/drums](https://lunarfizztransport.github.io/drums/)**: no install. The
+browser version in [`web/`](web/) does the same analysis as the Python tool
+(it's a line-by-line port, checked against it on the same recordings):
+
+- record against a click with a count-in, upload a phone recording (or a
+  `.mid`), or play an e-kit over USB (Chrome and Edge);
+- measure your audio delay, and teach it your kit;
+- the same report: tiles, charts, your groove, moments to look at, research notes;
+- coaching from Claude with **your own** API key, which goes from your browser
+  straight to Anthropic. Ideas play back in the page and download as MIDI.
+
+Recordings and takes stay in your browser (IndexedDB) and never upload. To run
+it locally, serve the folder (`python3 -m http.server -d web 8765`) and open
+<http://localhost:8765>. `web/test/` checks the port against this package:
+
+```bash
+.venv/bin/python web/test/reference.py /tmp/groove-ref   # reference outputs from Python
+node web/test/compare.mjs /tmp/groove-ref                 # the browser engine on the same audio
+```
+
 ---
 
 ## What you need
@@ -416,5 +438,9 @@ groove/
   cli.py          the `groove` command
 run.sh            guided walkthrough
 mac-app/          the drag-and-drop Mac app (AppleScript) and its build script
+web/
+  index.html      the browser version: recording, kit teaching, takes, report, coaching
+  groove.js       the analysis engine, ported from groove/ (no DOM; also runs in Node)
+  test/           checks groove.js against the Python package
 takes/            your recordings and results (not uploaded)
 ```
