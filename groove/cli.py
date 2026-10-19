@@ -226,6 +226,8 @@ def run_analyze(args, meter) -> int:
         err = "Couldn't reach the Anthropic API; check your connection."
     except (anthropic.APIStatusError, RuntimeError) as e:
         err = f"Coaching failed: {e}"
+    except Exception as e:  # never lose the timing report because coaching broke
+        err = f"Coaching failed unexpectedly ({type(e).__name__}). Your timing report is still ready."
     else:
         err = None
     if err:

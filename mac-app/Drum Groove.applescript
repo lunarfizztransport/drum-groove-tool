@@ -43,7 +43,7 @@ on analyzeFile(f)
 		set lastTime to ts
 
 		-- Tempo (and what the metronome counted, for x/8 meters)
-		set bpm to text returned of (display dialog "Tempo you played at, in bpm." & return & "Leave blank if you don't know it." default answer "" with title "Drum Groove")
+		set bpm to text returned of (display dialog "Tempo you played at, in bpm." & return & return & "Played along to a song? Use the song's tempo (search “song name bpm”)." & return & "Leave blank if you don't know it." default answer "" with title "Drum Groove")
 		set bpmNote to ""
 		if bpm is not "" and ts ends with "/8" then
 			set n to choose from list {"Dotted quarters (2 beats per bar in 6/8)", "Quarter notes", "8th notes"} with title "Drum Groove" with prompt "What did your metronome count at " & bpm & " bpm?" default items {"Quarter notes"}
@@ -95,7 +95,13 @@ on analyzeFile(f)
 	try
 		do shell script cmd
 	on error
-		set tailText to do shell script "tail -n 6 " & logFile & " 2>/dev/null || true"
-		display dialog "Couldn't analyze “" & fileName & "”." & return & return & tailText buttons {"OK"} default button "OK" with title "Drum Groove" with icon caution
+		set reportMade to (do shell script "grep -c '^Report:' " & logFile & " || true") is not "0"
+		if reportMade then
+			set why to do shell script "grep -m1 'Coaching failed' " & logFile & " || echo 'Coaching did not work this time.'"
+			display dialog "Your timing report for “" & fileName & "” is ready, but the coaching didn't work:" & return & return & why buttons {"OK"} default button "OK" with title "Drum Groove"
+		else
+			set tailText to do shell script "tail -n 6 " & logFile & " 2>/dev/null || true"
+			display dialog "Couldn't analyze “" & fileName & "”." & return & return & tailText buttons {"OK"} default button "OK" with title "Drum Groove" with icon caution
+		end if
 	end try
 end analyzeFile

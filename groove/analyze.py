@@ -152,7 +152,8 @@ def analyze(
 
 def _fold_tempo(bpm: float, meter: Meter) -> float:
     """Bring an automatic tempo estimate into a plausible range for the meter's beat."""
-    lo, hi = (40, 130) if meter.compound else (65, 180)
+    # Most songs sit in this range; a faster guess is usually double the real tempo.
+    lo, hi = (40, 130) if meter.compound else (60, 140)
     if meter.compound:
         bpm *= 2 / 3  # estimates usually lock to quarter-ish pulses; convert to dotted quarters
     while bpm < lo:

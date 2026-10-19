@@ -8,6 +8,7 @@ import json
 from typing import Literal
 
 import anthropic
+import pydantic
 from pydantic import BaseModel, Field
 
 MODEL = "claude-opus-5-5"
@@ -92,17 +93,22 @@ def coach(analysis: dict, goal: str | None = None) -> Coaching:
              f"{analysis.get('beat_note', 'quarter note')}s.\n\n")
     user += "Here is the analysis of my recording:\n\n" + json.dumps(_trim(analysis), indent=1)
 
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=16000,
-        system=SYSTEM,
-        output_config={"effort": "high"},
-        output_format=Coaching,
-        messages=[{"role": "user", "content": user}],
-        # If a safety classifier declines, re-run on Anthropic's recommended fallback model.
-        extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
-        extra_body={"fallbacks": "default"},
-    )
+    # Streaming, so a long take's coaching (plus Claude's thinking) has room without timing out.
+    try:
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=64000,
+            system=SYSTEM,
+            output_config={"effort": "high"},
+            output_format=Coaching,
+            messages=[{"role": "user", "content": user}],
+            # If a safety classifier declines, re-run on Anthropic's recommended fallback model.
+            extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
+            extra_body={"fallbacks": "default"},
+        ) as stream:
+            response = stream.get_final_message()
+    except pydantic.ValidationError as e:
+        raise RuntimeError("Claude's coaching came back incomplete, so it was skipped. Try again.") from e
     if response.stop_reason == "refusal":
         raise RuntimeError("Claude declined to answer this request.")
     if response.stop_reason == "max_tokens" or response.parsed_output is None:
@@ -118,7 +124,9 @@ def _trim(analysis: dict) -> dict:
         "legend": p["legend"],
         "main_groove": p["main_groove"],
         "main_groove_bars": p["main_groove_bars"],
-        "bars_that_differ": [b for b in p["all_bars"] if b["bar"] in p["bars_that_differ"]],
+        "bars_that_differ_count": len(p["bars_that_differ"]),
+        # a sample is enough to show variations and fills; long takes would otherwise send every bar
+        "bars_that_differ_sample": [b for b in p["all_bars"] if b["bar"] in p["bars_that_differ"]][:12],
     }
     return a
 
