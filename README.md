@@ -59,6 +59,24 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+## The easiest way: the Drum Groove app (no terminal)
+
+Build the Mac app once:
+
+```bash
+./mac-app/build.sh
+```
+
+This installs **Drum Groove** in your Applications folder (drag it to your Dock
+for one-click access). Then **drag a recording onto the icon**, such as a Voice
+Memo AirDropped from your phone, or double-click it to pick a file. It asks for
+the time signature, tempo (optional), kit profile, and whether to include
+coaching, then opens your report. Your API key is read from Keychain (see
+[Keeping your API key private](#keeping-your-api-key-private)), so there's
+nothing to paste. The first time, macOS may ask to let Drum Groove use that
+Keychain item: choose **Always Allow**. If something goes wrong, the app shows
+the error. The full log is in `~/Library/Logs/DrumGroove.log`.
+
 ## The easy way: guided run
 
 ```bash
@@ -397,5 +415,6 @@ groove/
   synth.py        fake takes for testing
   cli.py          the `groove` command
 run.sh            guided walkthrough
+mac-app/          the drag-and-drop Mac app (AppleScript) and its build script
 takes/            your recordings and results (not uploaded)
 ```
