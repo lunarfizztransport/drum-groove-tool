@@ -12,7 +12,7 @@ property lastCoach : "Timing only"
 
 on run
 	try
-		set picked to choose file with prompt "Choose a drum recording to analyze:" with multiple selections allowed
+		set picked to choose file with prompt "Choose a drum recording to analyze (AirDropped memos are in Downloads):" default location (path to downloads folder) with multiple selections allowed
 	on error number -128
 		return
 	end try
@@ -43,7 +43,14 @@ on analyzeFile(f)
 		set lastTime to ts
 
 		-- Tempo (and what the metronome counted, for x/8 meters)
-		set bpm to text returned of (display dialog "Tempo you played at, in bpm." & return & return & "Played along to a song? Use the song's tempo (search “song name bpm”)." & return & "Leave blank if you don't know it." default answer "" with title "Drum Groove")
+		set tempoPrompt to "Tempo you played at, as a number (for example 88)." & return & return & "Played along to a song? Look up its tempo by searching “song name bpm” and type the number here." & return & return & "Leave blank if you don't know it."
+		repeat
+			set answer to text returned of (display dialog tempoPrompt default answer "" with title "Drum Groove")
+			-- Accept "88", "88 bpm", "about 88"; ask again if there's no number at all.
+			set bpm to do shell script "printf %s " & quoted form of answer & " | grep -oE '[0-9]+([.][0-9]+)?' | head -1 || true"
+			if answer is "" or bpm is not "" then exit repeat
+			set tempoPrompt to "Please type the tempo as a number, like 88." & return & "(“" & answer & "” doesn't contain a number.)" & return & return & "Leave blank if you don't know it."
+		end repeat
 		set bpmNote to ""
 		if bpm is not "" and ts ends with "/8" then
 			set n to choose from list {"Dotted quarters (2 beats per bar in 6/8)", "Quarter notes", "8th notes"} with title "Drum Groove" with prompt "What did your metronome count at " & bpm & " bpm?" default items {"Quarter notes"}
